@@ -1,0 +1,216 @@
+---
+title: "Data retrieval and normalization"
+format: html
+editor: visual
+---
+
+#### References
+
+https://doi.org/10.3389/fimmu.2021.666137
+https://doi.org/10.1038/s41598-023-40042-7
+https://doi.org/10.1016/j.ebiom.2019.07.046
+https://osf.io/6ucka?view_only=da4f860bd2474745880944fce1d433b1
+
+
+## Load packages
+
+```{r include=FALSE}
+library(dplyr)
+library(TCGAbiolinks)
+library(GEOquery)
+library(limma)
+library(gtsummary)
+library(rfextras)
+library(FactoMineR)
+library(factoextra)
+library(reportfactory)
+library(car)
+library(rfextras)
+library(reportfactory)
+library(tidyverse)
+library(finalfit)
+
+
+```
+
+
+## Retrieve datasets
+
+### BRCA-TCGA
+
+Retrieved from XENA and TCGAbiolinks(https://xenabrowser.net/datapages/)
+
+```{r include=FALSE}
+# Expression data
+
+
+BRCA.htseq_counts = read.table(file = "TCGA-BRCA.htseq_counts.tsv",
+                               sep = "\t",
+                               header = T,
+                               row.names = 1)
+
+BRCA.htseq_counts_round = round(((2 ^ BRCA.htseq_counts) - 1), 0)
+BRCA.htseq_counts_round
+
+# Clinical data
+library(readr)
+clinical_BRCA_xena <- read_delim("clinical_BRCA_xena.tsv", 
+    delim = "\t", escape_double = FALSE, 
+    trim_ws = TRUE)
+
+query.clin <- GDCquery(project = "TCGA-BRCA",
+                       data.category = "Clinical",
+                       data.format = "BCR XML")
+
+query.bios <- GDCquery(project = "TCGA-BRCA",
+                       data.category = "Biospecimen",
+                       data.format = "BCR XML")
+
+GDCdownload(query.bios)
+
+#GDCdownload(query.rna, files.per.chunk = 1 ,directory = my.dir)
+
+BRCA.clin <- GDCprepare_clinic(query = query.clin, 
+                               clinical.info = "patient")
+BRCA.clin <- GDCprepare_clinic(query = query.bios, 
+                               clinical.info = "sample")
+```
+
+### METABRIC
+
+Retrieved from CBioportal
+
+```{r}
+#Expression
+METABRIC_expression = read.table(file = "data_mrna_illumina_microarray.txt",
+                               sep = "\t",
+                               header = T)
+
+# Clinical data
+METABRIC_clinical_pac = read.table(file = "data_clinical_patient.txt",
+                               sep = "\t",
+                               header = T)
+
+```
+
+
+### GEO
+https://www.tandfonline.com/doi/full/10.2147/OTT.S113855
+GSE21653; GSE20685; 
+GSE26971; GSE12776
+https://doi.org/10.1038/s41598-021-00268-9
+GSE42568; GSE31448; 
+
+
+```{r}
+gsetGSE29044 <- getGEO("GSE29044", GSEMatrix =TRUE, getGPL=FALSE) # No survival
+gsetGSE21653 <- getGEO("GSE21653", GSEMatrix =TRUE, getGPL=FALSE) #
+gsetGSE20685 <- getGEO("GSE20685", GSEMatrix =TRUE, getGPL=FALSE) # No surv and pam
+gsetGSE26971 <- getGEO("GSE26971", GSEMatrix =TRUE, getGPL=FALSE) # No PAM50
+
+gsetGSE42568 <- getGEO("GSE42568", GSEMatrix =TRUE, getGPL=FALSE) # No PAM50
+gsetGSE31448 <- getGEO("GSE31448", GSEMatrix =TRUE, getGPL=FALSE)
+gsetGSE134359 <- getGEO("GSE134359", GSEMatrix =TRUE, getGPL=FALSE) # No surv
+
+#mine
+gsetGSE25055 <- getGEO("GSE25055", GSEMatrix =TRUE, getGPL=FALSE)
+```
+## Clinical data description for all cohorts 
+Variables included: age, gender, race, histological type, pam50 subtype
+```{r}
+# BRCA
+clinical_BRCA_xena$sample_id <- gsub("-",
+                                     ".",
+                                     clinical_BRCA_xena$submitter_id.samples)
+
+clinical_BRCA_xena <- clinical_BRCA_xena[clinical_BRCA_xena$sample_id %in% colnames(BRCA.htseq_counts_round),]
+
+clinical_BRCA_xena_1 = clinical_BRCA_xena |>  mutate(sample.id = gsub(".$", "", submitter_id.samples))
+
+clinical_BRCA_xena_1 <- left_join(clinical_BRCA_xena_1,
+                                  pam_50_bmc,
+                                  by = "sample.id")
+
+subset_clin_BRCA <- clinical_BRCA_xena_1 |> mutate(
+  age_at_diagnosis = ff_label(age_at_initial_pathologic_diagnosis,
+                              "Age at diagnosis"),
+  race = race.demographic |>
+    fct_recode(
+      "White" = "white",
+      "Black or Afro-american" = "black or african american",
+      "Asian" = "asian",
+      "American" = "american indian or alaska native",
+      "Not Reported" = "not reported",
+      "NA" = ""
+    ) |>
+    fct_relevel(
+      "White",
+      "black or african american",
+      "Asian",
+      "American",
+      "Not reported",
+      "NA"
+    ) |>
+    ff_label("Race"),
+  sample_type = sample_type.samples |>
+    fct_relevel("Primary Tumor Solid",
+                "Metastatic",
+                "Solid Tissue Normal") |>
+    ff_label("Sample type"),
+  
+  pathologic_stage = as.factor(`Pathologic stage`),
+  
+  Histological_type = as.factor(`Histological type`),
+  
+  pam50 = PAM50 |>
+    fct_recode(
+      "HER2 enriched" = "Her2",
+      "Luminal A" = "LumA",
+      "Luminal B" = "LumB"
+    ) |>
+    fct_relevel("Basal",
+                "HER2",
+                "Luminal A",
+                "Luminal B",
+                "Normal") |>
+    ff_label("PAM50 subtype")
+)
+
+brca_table <- subset_clin_BRCA |>
+  tbl_summary(
+    include = c(
+      age_at_diagnosis,
+      race,
+      sample_type,
+      pathologic_stage,
+      Histological_type,
+      pam50
+    )
+  )
+
+```
+
+
+# Exploratory analysis
+
+Main references
+https://www.bioconductor.org/packages/release/workflows/vignettes/rnaseqGene/inst/doc/rnaseqGene.html
+
+```{r}
+
+```
+
+
+
+
+
+## test
+```{r}
+library(dplyr)
+
+
+
+```
+
+
+
