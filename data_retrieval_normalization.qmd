@@ -29,6 +29,7 @@ library(rfextras)
 library(reportfactory)
 library(tidyverse)
 library(finalfit)
+library(DESeq2)
 ```
 
 
@@ -113,6 +114,7 @@ gsetGSE134359 <- getGEO("GSE134359", GSEMatrix =TRUE, getGPL=FALSE) # No surv
 #mine
 gsetGSE25055 <- getGEO("GSE25055", GSEMatrix =TRUE, getGPL=FALSE)
 ```
+
 ## Clinical data description for all cohorts 
 Variables included: age, gender, race, histological type, pam50 subtype
 ```{r}
@@ -132,7 +134,7 @@ clinical_BRCA_xena_1 <- left_join(clinical_BRCA_xena_1,
                                   pam_50_bmc,
                                   by = "sample.id")
 
-subset_clin_brca <- clinical_BRCA_xena_1 |> mutate(
+clinical_BRCA_xena_1 <- clinical_BRCA_xena_1 |> mutate(
   age_at_diagnosis = ff_label(age_at_initial_pathologic_diagnosis,
                               "Age at diagnosis"),
   race = race.demographic |>
@@ -177,7 +179,7 @@ subset_clin_brca <- clinical_BRCA_xena_1 |> mutate(
     ff_label("PAM50 subtype")
 )
 
-brca_table <- subset_clin_brca |>
+brca_table <- clinical_BRCA_xena_1 |>
   tbl_summary(
     include = c(
       age_at_diagnosis,
@@ -270,13 +272,20 @@ metabric_table <- metabric_clinical_1 |>
 
 ```
 
-
 # Exploratory analysis for BRCA-TCGA
 
 Main references
 https://www.bioconductor.org/packages/release/workflows/vignettes/rnaseqGene/inst/doc/rnaseqGene.html
 
 ```{r}
+BRCA.htseq_counts_round = BRCA.htseq_counts_round |> 
+  select(clinical_BRCA_xena_1$sample_id)
+
+dds_tcga = DESeqDataSetFromMatrix(
+  countData = BRCA.htseq_counts_round,
+  colData = clinical_BRCA_xena_1,
+  design = ~ sample_type
+)
 
 ```
 
