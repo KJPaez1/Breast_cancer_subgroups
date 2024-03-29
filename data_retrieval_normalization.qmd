@@ -29,8 +29,6 @@ library(rfextras)
 library(reportfactory)
 library(tidyverse)
 library(finalfit)
-
-
 ```
 
 
@@ -87,9 +85,9 @@ METABRIC_expression = read.table(file = "data_mrna_illumina_microarray.txt",
                                header = T)
 
 # Clinical data
-METABRIC_clinical_pac = read.table(file = "data_clinical_patient.txt",
-                               sep = "\t",
-                               header = T)
+metabric_clinical <- read_delim("metabric_clinical.txt", 
+    delim = "\t", escape_double = FALSE, 
+    trim_ws = TRUE)
 
 ```
 
@@ -118,20 +116,23 @@ gsetGSE25055 <- getGEO("GSE25055", GSEMatrix =TRUE, getGPL=FALSE)
 ## Clinical data description for all cohorts 
 Variables included: age, gender, race, histological type, pam50 subtype
 ```{r}
-# BRCA
+
+#######################     BRCA-TCGA    #######################################
+
 clinical_BRCA_xena$sample_id <- gsub("-",
                                      ".",
                                      clinical_BRCA_xena$submitter_id.samples)
 
 clinical_BRCA_xena <- clinical_BRCA_xena[clinical_BRCA_xena$sample_id %in% colnames(BRCA.htseq_counts_round),]
 
-clinical_BRCA_xena_1 = clinical_BRCA_xena |>  mutate(sample.id = gsub(".$", "", submitter_id.samples))
+clinical_BRCA_xena_1 = clinical_BRCA_xena |>  
+  mutate(sample.id = gsub(".$", "", submitter_id.samples))
 
 clinical_BRCA_xena_1 <- left_join(clinical_BRCA_xena_1,
                                   pam_50_bmc,
                                   by = "sample.id")
 
-subset_clin_BRCA <- clinical_BRCA_xena_1 |> mutate(
+subset_clin_brca <- clinical_BRCA_xena_1 |> mutate(
   age_at_diagnosis = ff_label(age_at_initial_pathologic_diagnosis,
                               "Age at diagnosis"),
   race = race.demographic |>
@@ -176,7 +177,7 @@ subset_clin_BRCA <- clinical_BRCA_xena_1 |> mutate(
     ff_label("PAM50 subtype")
 )
 
-brca_table <- subset_clin_BRCA |>
+brca_table <- subset_clin_brca |>
   tbl_summary(
     include = c(
       age_at_diagnosis,
@@ -188,10 +189,89 @@ brca_table <- subset_clin_BRCA |>
     )
   )
 
+
+#########################    METABRIC   ########################################
+
+metabric_clinical <- clean_names(metabric_clinical) # Cleaning names
+
+# metabric_clinical: 2509 x 39
+metabric_clinical = metabric_clinical |>  
+  mutate(sample_id = gsub("-", ".", patient_id)) # match sintax
+
+# metabric_clinical_0: dim 1980 x 39
+metabric_clinical_0 <- metabric_clinical[
+  metabric_clinical$sample_id %in% colnames(METABRIC_expression),] 
+
+metabric_clinical_1 <- metabric_clinical_0 |> mutate(
+  
+  age_at_diagnosis = ff_label(age_at_diagnosis,
+                              "Age at diagnosis"),
+  
+  sample_type = sample_type |>
+    fct_relevel("Primary") |>
+    ff_label("Sample type"),
+  
+  tumor_stage = as.factor(tumor_stage) |> 
+    fct_recode("Stage I" = "1",
+               "Stage II" = "2",
+               "Stage III" = "3",
+               "Stage IV" = "4",
+               "Unwknown/NA" = "0"),
+  
+  cancer_type_detailed = as.factor(cancer_type_detailed) |> 
+    ff_label("Histological type"),
+  
+  pam50_claudin_low_subtype = pam50_claudin_low_subtype |>
+    fct_recode(
+      "HER2 enriched" = "Her2",
+      "Luminal A" = "LumA",
+      "Luminal B" = "LumB"
+    ) |>
+    fct_relevel("Basal",
+                "HER2",
+                "Luminal A",
+                "Luminal B",
+                "Claudin-low",
+                "Normal",
+                "NC") |>
+    ff_label("PAM50 subtype + Clauding-low"),
+  
+  chemotherapy = as.factor(chemotherapy) |> 
+    fct_recode(
+      "Yes" = "YES",
+      "No" = "NO"
+    ) |> 
+    ff_label("Received chemotherapy"),
+  
+  radio_therapy = as.factor(radio_therapy) |> 
+    fct_recode(
+      "Yes" = "YES",
+      "No" = "NO"
+    ) |> 
+    ff_label("Received radiotherapy"),
+  
+)
+
+
+metabric_table <- metabric_clinical_1 |>
+  tbl_summary(
+    include = c(
+      age_at_diagnosis,
+      sample_type,
+      tumor_stage,
+      cancer_type_detailed,
+      pam50_claudin_low_subtype,
+      chemotherapy,
+      radio_therapy
+    )
+  )
+
+####################    GEO datasets    ########################################
+
 ```
 
 
-# Exploratory analysis
+# Exploratory analysis for BRCA-TCGA
 
 Main references
 https://www.bioconductor.org/packages/release/workflows/vignettes/rnaseqGene/inst/doc/rnaseqGene.html
