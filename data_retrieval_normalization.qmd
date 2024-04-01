@@ -41,8 +41,6 @@ Retrieved from XENA and TCGAbiolinks(https://xenabrowser.net/datapages/)
 
 ```{r include=FALSE}
 # Expression data
-
-
 BRCA.htseq_counts = read.table(file = "TCGA-BRCA.htseq_counts.tsv",
                                sep = "\t",
                                header = T,
@@ -100,19 +98,23 @@ GSE26971; GSE12776
 https://doi.org/10.1038/s41598-021-00268-9
 GSE42568; GSE31448; 
 
-
 ```{r}
-gsetGSE29044 <- getGEO("GSE29044", GSEMatrix =TRUE, getGPL=FALSE) # No survival
-gsetGSE21653 <- getGEO("GSE21653", GSEMatrix =TRUE, getGPL=FALSE) #
-gsetGSE20685 <- getGEO("GSE20685", GSEMatrix =TRUE, getGPL=FALSE) # No surv and pam
-gsetGSE26971 <- getGEO("GSE26971", GSEMatrix =TRUE, getGPL=FALSE) # No PAM50
+gsetGSE29044 <-
+  getGEO("GSE29044", GSEMatrix = TRUE, getGPL = FALSE) # No survival
+gsetGSE21653 <- getGEO("GSE21653", GSEMatrix = TRUE, getGPL = FALSE) #
+gsetGSE20685 <-
+  getGEO("GSE20685", GSEMatrix = TRUE, getGPL = FALSE) # No surv and pam
+gsetGSE26971 <-
+  getGEO("GSE26971", GSEMatrix = TRUE, getGPL = FALSE) # No PAM50
 
-gsetGSE42568 <- getGEO("GSE42568", GSEMatrix =TRUE, getGPL=FALSE) # No PAM50
-gsetGSE31448 <- getGEO("GSE31448", GSEMatrix =TRUE, getGPL=FALSE)
-gsetGSE134359 <- getGEO("GSE134359", GSEMatrix =TRUE, getGPL=FALSE) # No surv
+gsetGSE42568 <-
+  getGEO("GSE42568", GSEMatrix = TRUE, getGPL = FALSE) # No PAM50
+gsetGSE31448 <- getGEO("GSE31448", GSEMatrix = TRUE, getGPL = FALSE)
+gsetGSE134359 <-
+  getGEO("GSE134359", GSEMatrix = TRUE, getGPL = FALSE) # No surv
 
 #mine
-gsetGSE25055 <- getGEO("GSE25055", GSEMatrix =TRUE, getGPL=FALSE)
+gsetGSE25055 <- getGEO("GSE25055", GSEMatrix = TRUE, getGPL = FALSE)
 ```
 
 ## Clinical data description for all cohorts 
@@ -272,20 +274,43 @@ metabric_table <- metabric_clinical_1 |>
 
 ```
 
-# Exploratory analysis for BRCA-TCGA
 
+# Exploratory analysis for BRCA-TCGA
 Main references
 https://www.bioconductor.org/packages/release/workflows/vignettes/rnaseqGene/inst/doc/rnaseqGene.html
+
+## Pre-filtering and transformation
 
 ```{r}
 BRCA.htseq_counts_round = BRCA.htseq_counts_round |> 
   select(clinical_BRCA_xena_1$sample_id)
 
+## Construct S4 object
 dds_tcga = DESeqDataSetFromMatrix(
   countData = BRCA.htseq_counts_round,
   colData = clinical_BRCA_xena_1,
   design = ~ sample_type
 )
+
+## Pre-filtering BRCA-TCGA: based on the smallest group size for sample_type
+table(clinical_BRCA_xena_1$sample_type) # Metastatic 7
+
+smallestGroupSize = 7
+
+nrow(dds_tcga) # 60488
+
+keep = rowSums(counts(dds_tcga) >= 10) >= smallestGroupSize 
+
+dds_tcga = dds_tcga[keep,] # nrow = 37889
+
+## Transformation using variance stabilizing transformation (vst) for 
+## negative binomial data
+vsd = vst(dds_tcga, blind = FALSE)
+head(assay(vsd), 3)
+
+## Transformation for comparison with rlog and 
+rld = rlog(dds_tcga, blind = FALSE)
+head(assay(rld), 3)
 
 ```
 
