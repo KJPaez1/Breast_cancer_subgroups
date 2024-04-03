@@ -330,8 +330,36 @@ ggplot(df, aes(x = x, y = y)) + geom_hex(bins = 80) +
   coord_fixed() + facet_grid(. ~ transformation)
 ```
 
+## Sample distances
+To see if fit the expectation from the experiment's design: Normal tissue should be separated from tumoral tissue
+```{r}
+sampleDists = dist(t(assay(vsd)))
+sampleDists
+
+## On a heatmap
+library(pheatmap)
+library(RColorBrewer)
+sampleDistMatrix = as.matrix(sampleDists)
+rownames(sampleDistMatrix) = paste(vsd$sample_type, 
+                                   vsd$sample_id, 
+                                   sep = " - ")
+colnames(sampleDistMatrix) = NULL
+colors = colorRampPalette(rev(brewer.pal(9, "Blues")))(255)
+pheatmap(sampleDistMatrix,
+         clustering_distance_rows = sampleDists,
+         clustering_distance_cols = sampleDists,
+         col = colors)
+## PCA
+pca_sample_type = plotPCA(vsd, intgroup = "sample_type")
+pca_sample_type + theme(text = element_text(size = 18))
+
+pca_pam50 = plotPCA(vsd, intgroup = "pam50")
+pca_pam50 + theme(text = element_text(size = 18))
 
 
+pca_hist_type = plotPCA(vsd, intgroup = "Histological_type")
+pca_hist_type + theme(text = element_text(size = 18))
+```
 
 
 ## test
