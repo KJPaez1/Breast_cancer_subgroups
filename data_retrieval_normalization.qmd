@@ -30,7 +30,30 @@ library(reportfactory)
 library(tidyverse)
 library(finalfit)
 library(DESeq2)
+library(flextable)
 ```
+
+```{r}
+my_theme <-
+  list(
+    "pkgwide-fn:pvalue_fun" = function(x) style_pvalue(x, digits = 2),
+    "pkgwide-fn:prependpvalue_fun" = function(x) style_pvalue(x, digits = 2, prepend_p = TRUE),
+
+    "tbl_summary-str:continuous_stat" = "{median} ({p25}, {p75})",
+    "tbl_summary-str:categorical_stat" = "{n} ({p}%)",
+    
+    "tbl_summary-fn:percent_fun" = function(x) style_number(x, digits = 1, scale = 100),
+    
+    "tbl_summary-arg:missing" = "ifany"
+  )
+
+set_gtsummary_theme(my_theme)
+theme_gtsummary_language(language = "en")
+theme_gtsummary_compact()
+```
+
+
+
 
 
 ## Retrieve datasets
@@ -158,14 +181,16 @@ clinical_BRCA_xena_1 <- clinical_BRCA_xena_1 |> mutate(
     ) |>
     ff_label("Race"),
   sample_type = sample_type.samples |>
-    fct_relevel("Primary Tumor Solid",
+    fct_relevel("Primary Tumor",
                 "Metastatic",
                 "Solid Tissue Normal") |>
     ff_label("Sample type"),
   
-  pathologic_stage = as.factor(`Pathologic stage`),
+  pathologic_stage = as.factor(`Pathologic stage`) |> 
+    ff_label("Pathologic stage"),
   
-  Histological_type = as.factor(`Histological type`),
+  Histological_type = as.factor(`Histological type`) |> 
+    ff_label("Histological type"),
   
   pam50 = PAM50 |>
     fct_recode(
@@ -181,7 +206,7 @@ clinical_BRCA_xena_1 <- clinical_BRCA_xena_1 |> mutate(
     ff_label("PAM50 subtype")
 )
 
-brca_table <- clinical_BRCA_xena_1 |>
+brca_table_before <- clinical_BRCA_xena_1 |>
   tbl_summary(
     include = c(
       age_at_diagnosis,
@@ -193,6 +218,28 @@ brca_table <- clinical_BRCA_xena_1 |>
     )
   )
 
+brca_table <- clinical_BRCA_xena_1 |> 
+  filter(sample_type == "Primary Tumor" | sample_type == "Solid Tissue Normal") |>
+  filter(complete.cases(sample_type, pathologic_stage, Histological_type, pam50)) |> 
+  tbl_summary(
+    include = c(
+      age_at_diagnosis,
+      race,
+      sample_type,
+      pathologic_stage,
+      Histological_type,
+      pam50
+    )
+  )
+
+
+# save tables
+
+brca_table_before <- as_flex_table(brca_table_before)
+
+save_as_docx(brca_table_before, path = "brca_table_before.docx", align = "center")
+
+ 
 
 #########################    METABRIC   ########################################
 
