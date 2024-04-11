@@ -6,11 +6,7 @@ editor: visual
 
 #### References
 
-https://doi.org/10.3389/fimmu.2021.666137
-https://doi.org/10.1038/s41598-023-40042-7
-https://doi.org/10.1016/j.ebiom.2019.07.046
-https://osf.io/6ucka?view_only=da4f860bd2474745880944fce1d433b1
-
+https://doi.org/10.3389/fimmu.2021.666137 not help https://doi.org/10.1038/s41598-023-40042-7 https://doi.org/10.1016/j.ebiom.2019.07.046 https://osf.io/6ucka?view_only=da4f860bd2474745880944fce1d433b1
 
 ## Load packages
 
@@ -52,10 +48,6 @@ theme_gtsummary_language(language = "en")
 theme_gtsummary_compact()
 ```
 
-
-
-
-
 ## Retrieve datasets
 
 ### BRCA-TCGA
@@ -69,8 +61,9 @@ BRCA.htseq_counts = read.table(file = "TCGA-BRCA.htseq_counts.tsv",
                                header = T,
                                row.names = 1)
 
+BRCA.htseq_counts_round_before = round(((2 ^ BRCA.htseq_counts) - 1), 0)
 BRCA.htseq_counts_round = round(((2 ^ BRCA.htseq_counts) - 1), 0)
-BRCA.htseq_counts_round
+
 
 # Clinical data
 library(readr)
@@ -113,13 +106,9 @@ metabric_clinical <- read_delim("metabric_clinical.txt",
 
 ```
 
-
 ### GEO
-https://www.tandfonline.com/doi/full/10.2147/OTT.S113855
-GSE21653; GSE20685; 
-GSE26971; GSE12776
-https://doi.org/10.1038/s41598-021-00268-9
-GSE42568; GSE31448; 
+
+https://www.tandfonline.com/doi/full/10.2147/OTT.S113855 GSE21653; GSE20685; GSE26971; GSE12776 https://doi.org/10.1038/s41598-021-00268-9 GSE42568; GSE31448;
 
 ```{r}
 gsetGSE29044 <-
@@ -140,8 +129,10 @@ gsetGSE134359 <-
 gsetGSE25055 <- getGEO("GSE25055", GSEMatrix = TRUE, getGPL = FALSE)
 ```
 
-## Clinical data description for all cohorts 
+## Clinical data description for all cohorts
+
 Variables included: age, gender, race, histological type, pam50 subtype
+
 ```{r}
 
 #######################     BRCA-TCGA    #######################################
@@ -218,28 +209,35 @@ brca_table_before <- clinical_BRCA_xena_1 |>
     )
   )
 
-brca_table <- clinical_BRCA_xena_1 |> 
-  filter(sample_type == "Primary Tumor" | sample_type == "Solid Tissue Normal") |>
-  filter(complete.cases(sample_type, pathologic_stage, Histological_type, pam50)) |> 
-  tbl_summary(
-    include = c(
-      age_at_diagnosis,
-      race,
-      sample_type,
-      pathologic_stage,
-      Histological_type,
-      pam50
-    )
+## Table after remove:
+##    Primary Tumor with no pam50
+##    Different patological stage to I, II, and III
+##    Different histological stage to Infiltrating duc and Infiltrating
+
+brca_tcga_clinical <- clinical_BRCA_xena_1 |> 
+  filter(sample_type == "Solid Tissue Normal" & !is.na(pam50) |
+         (pathologic_stage
+          %in% c("Stage I", "Stage II", "Stage III")
+          & !is.na(pam50) & Histological_type
+          %in% c("Infiltrating Ductal Carcinoma", "Infiltrating Lobular Carcinoma")))
+
+brca_table = brca_tcga_clinical |> tbl_summary(
+  include = c(age_at_diagnosis, race, sample_type, 
+              pathologic_stage, Histological_type, 
+              pam50)
   )
 
 
 # save tables
 
 brca_table_before <- as_flex_table(brca_table_before)
-
 save_as_docx(brca_table_before, path = "brca_table_before.docx", align = "center")
 
- 
+brca_table <- as_flex_table(brca_table)
+save_as_docx(brca_table, path = "brca_table.docx", align = "center")
+
+
+
 
 #########################    METABRIC   ########################################
 
@@ -321,10 +319,9 @@ metabric_table <- metabric_clinical_1 |>
 
 ```
 
-
 # Exploratory analysis for BRCA-TCGA
-Main references
-https://www.bioconductor.org/packages/release/workflows/vignettes/rnaseqGene/inst/doc/rnaseqGene.html
+
+Main references https://www.bioconductor.org/packages/release/workflows/vignettes/rnaseqGene/inst/doc/rnaseqGene.html number of total samples: (methods) https://www.nature.com/articles/s41598-023-40042-7
 
 ## Pre-filtering and transformation
 
@@ -332,26 +329,46 @@ https://www.bioconductor.org/packages/release/workflows/vignettes/rnaseqGene/ins
 BRCA.htseq_counts_round = BRCA.htseq_counts_round |> 
   select(clinical_BRCA_xena_1$sample_id)
 
-## Construct S4 object
-dds_tcga = DESeqDataSetFromMatrix(
+## Construct S4 object before
+dds_tcga_before = DESeqDataSetFromMatrix(
   countData = BRCA.htseq_counts_round,
   colData = clinical_BRCA_xena_1,
   design = ~ sample_type
 )
 
-## Pre-filtering BRCA-TCGA: based on the smallest group size for sample_type
-table(clinical_BRCA_xena_1$sample_type) # Metastatic 7
 
-smallestGroupSize = 7
+
+brca_tcga_clinical$sample_id <- gsub("-",
+                                     ".",
+                                     brca_tcga_clinical$submitter_id.samples)
+
+BRCA.htseq_counts_round <- BRCA.htseq_counts_round |>  select(brca_tcga_clinical$sample_id)
+
+## Construct S4 object before
+dds_tcga = DESeqDataSetFromMatrix(
+  countData = BRCA.htseq_counts_round,
+  colData = brca_tcga_clinical,
+  design = ~ pam50
+)
+
+## Pre-filtering BRCA-TCGA: based on the smallest group size for sample_type
+table(clinical_BRCA_xena_1$sample_type) # Metastatic 7,
+print(brca_table) # smallest group is HER2 enriched = 71
+
+smallestGroupSize_before = 7
+smallestGroupSize = 71
 
 nrow(dds_tcga) # 60488
 
+keep_before = rowSums(counts(dds_tcga) >= 10) >= smallestGroupSize_before
 keep = rowSums(counts(dds_tcga) >= 10) >= smallestGroupSize 
 
-dds_tcga = dds_tcga[keep,] # nrow = 37889
+dds_tcga_before = dds_tcga_before[keep_before,] # nrow = 37889
+dds_tcga = dds_tcga[keep,] # nrow = 27337
 
 ## Transformation using variance stabilizing transformation (vst) for 
 ## negative binomial data
+vsd_before = vst(dds_tcga_before, blind = FALSE)
 vsd = vst(dds_tcga, blind = FALSE)
 head(assay(vsd), 3)
 
@@ -360,10 +377,16 @@ head(assay(vsd), 3)
 #head(assay(rld), 3)
 
 ## Transformation to log2 + 1
+dds_tcga_before = estimateSizeFactors(dds_tcga_before)
 dds_tcga = estimateSizeFactors(dds_tcga)
 
-df = bind_rows(
+df_before = bind_rows(
   as_data_frame(log2(counts(dds_tcga, normalized = TRUE)[,1:2] + 1)) |> 
+    mutate(transformation = "log2(x + 1)"),
+  as_data_frame(assay(vsd)[, 1:2]) |> mutate(transformation = "vst"))
+
+df = bind_rows(
+  as.data.frame(log2(counts(dds_tcga, normalized = TRUE)[,1:2] + 1)) |> 
     mutate(transformation = "log2(x + 1)"),
   as_data_frame(assay(vsd)[, 1:2]) |> mutate(transformation = "vst"))
 
@@ -374,11 +397,14 @@ lvls = c("log2(x + 1)", "vst")
 df$transformation = factor(df$transformation, levels = lvls)
 
 ggplot(df, aes(x = x, y = y)) + geom_hex(bins = 80) +
-  coord_fixed() + facet_grid(. ~ transformation)
+  coord_fixed() + facet_grid(. ~ transformation) +
+  theme(text = element_text(size = 18))
 ```
 
 ## Sample distances
+
 To see if fit the expectation from the experiment's design: Normal tissue should be separated from tumoral tissue
+
 ```{r}
 sampleDists = dist(t(assay(vsd)))
 sampleDists
@@ -400,22 +426,26 @@ pheatmap(sampleDistMatrix,
 pca_sample_type = plotPCA(vsd, intgroup = "sample_type")
 pca_sample_type + theme(text = element_text(size = 18))
 
-pca_pam50 = plotPCA(vsd, intgroup = "pam50")
-pca_pam50 + theme(text = element_text(size = 18))
+pca_pam50_before = plotPCA(vsd_before, intgroup = "pam50") +
+  ggtitle("Before filtering") +
+  theme(text = element_text(size = 18))
+
+pca_pam50 = plotPCA(vsd, intgroup = "pam50") + 
+  ggtitle("After filtering") +
+  theme(text = element_text(size = 18))
+
+grid.arrange(pca_pam50_before, pca_pam50, ncol = 2)
 
 
 pca_hist_type = plotPCA(vsd, intgroup = "Histological_type")
 pca_hist_type + theme(text = element_text(size = 18))
 ```
 
-
 ## test
+
 ```{r}
 library(dplyr)
 
 
 
 ```
-
-
-
