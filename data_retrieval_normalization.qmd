@@ -381,9 +381,9 @@ dds_tcga_before = estimateSizeFactors(dds_tcga_before)
 dds_tcga = estimateSizeFactors(dds_tcga)
 
 df_before = bind_rows(
-  as_data_frame(log2(counts(dds_tcga, normalized = TRUE)[,1:2] + 1)) |> 
+  as.data.frame(log2(counts(dds_tcga_before, normalized = TRUE)[,1:2] + 1)) |> 
     mutate(transformation = "log2(x + 1)"),
-  as_data_frame(assay(vsd)[, 1:2]) |> mutate(transformation = "vst"))
+  as_data_frame(assay(vsd_before)[, 1:2]) |> mutate(transformation = "vst"))
 
 df = bind_rows(
   as.data.frame(log2(counts(dds_tcga, normalized = TRUE)[,1:2] + 1)) |> 
@@ -391,28 +391,40 @@ df = bind_rows(
   as_data_frame(assay(vsd)[, 1:2]) |> mutate(transformation = "vst"))
 
 colnames(df)[1:2] = c("x", "y")
+colnames(df_before)[1:2] = c("x", "y")
 
 lvls = c("log2(x + 1)", "vst")
 
+df_before$transformation = factor(df_before$transformation, levels = lvls)
 df$transformation = factor(df$transformation, levels = lvls)
 
-ggplot(df, aes(x = x, y = y)) + geom_hex(bins = 80) +
+corr_before = ggplot(df_before, aes(x = x, y = y)) + 
+  geom_hex(bins = 80) +
   coord_fixed() + facet_grid(. ~ transformation) +
-  theme(text = element_text(size = 18))
+  theme(text = element_text(size = 28))
+
+corr = ggplot(df, aes(x = x, y = y)) + geom_hex(bins = 80) +
+  coord_fixed() + facet_grid(. ~ transformation) +
+  theme(text = element_text(size = 28))
+
 ```
 
-## Sample distances
+## EDA: Sample distances with PCA
 
 To see if fit the expectation from the experiment's design: Normal tissue should be separated from tumoral tissue
 
 ```{r}
-sampleDists = dist(t(assay(vsd)))
-sampleDists
+#sampleDists_before = dist(t(assay(vsd_before)))
+#sampleDists = dist(t(assay(vsd)))
 
-## On a heatmap
 library(pheatmap)
 library(RColorBrewer)
+library(gridExtra)
+## On a heatmap
+
+sampleDistMatrix_before = as.matrix(sampleDists_before)
 sampleDistMatrix = as.matrix(sampleDists)
+
 rownames(sampleDistMatrix) = paste(vsd$sample_type, 
                                    vsd$sample_id, 
                                    sep = " - ")
@@ -423,8 +435,14 @@ pheatmap(sampleDistMatrix,
          clustering_distance_cols = sampleDists,
          col = colors)
 ## PCA
-pca_sample_type = plotPCA(vsd, intgroup = "sample_type")
-pca_sample_type + theme(text = element_text(size = 18))
+pca_sample_before = plotPCA(vsd, intgroup = "sample_type") +
+  ggtitle("Before filtering") +
+  theme(text = element_text(size = 18))
+
+pca_sample = plotPCA(vsd, intgroup = "sample_type") +
+  ggtitle("After filtering") +
+  theme(text = element_text(size = 18))
+
 
 pca_pam50_before = plotPCA(vsd_before, intgroup = "pam50") +
   ggtitle("Before filtering") +
@@ -434,12 +452,41 @@ pca_pam50 = plotPCA(vsd, intgroup = "pam50") +
   ggtitle("After filtering") +
   theme(text = element_text(size = 18))
 
+
+pca_hist_before = plotPCA(vsd_before, intgroup = "Histological_type") +
+  ggtitle("Before filtering") +
+  theme(text = element_text(size = 18))
+
+pca_hist = plotPCA(vsd, intgroup = "Histological_type") + 
+  ggtitle("After filtering") +
+  theme(text = element_text(size = 18))
+
 grid.arrange(pca_pam50_before, pca_pam50, ncol = 2)
+grid.arrange(pca_sample_before, pca_sample, ncol = 2)
+grid.arrange(pca_hist_before, pca_hist, nrow = 2)
 
-
-pca_hist_type = plotPCA(vsd, intgroup = "Histological_type")
-pca_hist_type + theme(text = element_text(size = 18))
 ```
+
+## EDA: Sample distances with  MDS
+
+```{r}
+library("glmpca")
+
+mds_before = as.data.frame(colData(vsd_before)) |> 
+  cbind(cmdscale(sampleDistMatrix_before))
+mds_before = ggplot(mds_before, aes(x = `1`, y = `2`, color = pam50, shape = sample_type)) +
+  geom_point(size = 4) + coord_fixed() + ggtitle("MDS with VST data - Before filtering") +
+  theme(text = element_text(size = 18))
+
+mds = as.data.frame(colData(vsd)) |> 
+  cbind(cmdscale(sampleDistMatrix))
+mds = ggplot(mds, aes(x = `1`, y = `2`, color = pam50, shape = sample_type)) +
+  geom_point(size = 4) + coord_fixed() + ggtitle("MDS with VST data") +
+  theme(text = element_text(size = 18))
+
+grid.arrange(mds_before, mds, ncol = 2)
+```
+
 
 ## test
 
