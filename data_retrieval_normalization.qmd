@@ -27,7 +27,13 @@ library(tidyverse)
 library(finalfit)
 library(DESeq2)
 library(flextable)
+library(gridExtra)
+library(pheatmap)
+library(RColorBrewer)
+library(gridExtra)
 ```
+
+**Theme for tables with gtsummary**
 
 ```{r}
 my_theme <-
@@ -50,7 +56,7 @@ theme_gtsummary_compact()
 
 ## Retrieve datasets
 
-### BRCA-TCGA
+#### BRCA-TCGA
 
 Retrieved from XENA and TCGAbiolinks(https://xenabrowser.net/datapages/)
 
@@ -59,37 +65,49 @@ Retrieved from XENA and TCGAbiolinks(https://xenabrowser.net/datapages/)
 BRCA.htseq_counts = read.table(file = "TCGA-BRCA.htseq_counts.tsv",
                                sep = "\t",
                                header = T,
-                               row.names = 1)
+                               row.names = 1) # [1] 60488  1217
 
+# Data is log2(x+1) transformed. We reverse that transformation
 BRCA.htseq_counts_round_before = round(((2 ^ BRCA.htseq_counts) - 1), 0)
 BRCA.htseq_counts_round = round(((2 ^ BRCA.htseq_counts) - 1), 0)
 
 
-# Clinical data
+# Clinical data from xena
 library(readr)
-clinical_BRCA_xena <- read_delim("clinical_BRCA_xena.tsv", 
+tcga_clinical_xena <- read_delim("clinical_BRCA_xena.tsv", 
     delim = "\t", escape_double = FALSE, 
-    trim_ws = TRUE)
+    trim_ws = TRUE) # [1] 1284  140
 
-query.clin <- GDCquery(project = "TCGA-BRCA",
-                       data.category = "Clinical",
-                       data.format = "BCR XML")
+# Before: [1] "TCGA-A2-A0CY-01A" | after [1] "TCGA.A2.A0CY.01A"
+tcga_clinical_xena$sample.id <- gsub("-",
+                                     ".",
+                                     tcga_clinical_xena$submitter_id.samples)
 
-query.bios <- GDCquery(project = "TCGA-BRCA",
-                       data.category = "Biospecimen",
-                       data.format = "BCR XML")
+# Subset only those cases with expression data
+tcga_clinical_xena <- tcga_clinical_xena[tcga_clinical_xena$sample.id %in% colnames(BRCA.htseq_counts_round),] # [1] 1217  141
 
-GDCdownload(query.bios)
+
+# Clinical data from TCGAbiolinks
+#query.clin <- GDCquery(project = "TCGA-BRCA",
+                       #data.category = "Clinical",
+                       #data.format = "BCR XML")
+
+
+#query.bios <- GDCquery(project = "TCGA-BRCA",
+                       #data.category = "Biospecimen",
+                       #data.format = "BCR XML")
+
+#GDCdownload(query.bios)
 
 #GDCdownload(query.rna, files.per.chunk = 1 ,directory = my.dir)
 
-BRCA.clin <- GDCprepare_clinic(query = query.clin, 
-                               clinical.info = "patient")
-BRCA.clin <- GDCprepare_clinic(query = query.bios, 
-                               clinical.info = "sample")
+#BRCA.clin <- GDCprepare_clinic(query = query.clin, 
+                               #clinical.info = "patient")
+#BRCA.clin <- GDCprepare_clinic(query = query.bios, 
+                               #clinical.info = "sample")
 ```
 
-### METABRIC
+#### METABRIC
 
 Retrieved from CBioportal
 
@@ -106,7 +124,7 @@ metabric_clinical <- read_delim("metabric_clinical.txt",
 
 ```
 
-### GEO
+#### GEO
 
 https://www.tandfonline.com/doi/full/10.2147/OTT.S113855 GSE21653; GSE20685; GSE26971; GSE12776 https://doi.org/10.1038/s41598-021-00268-9 GSE42568; GSE31448;
 
@@ -131,32 +149,30 @@ gsetGSE25055 <- getGEO("GSE25055", GSEMatrix = TRUE, getGPL = FALSE)
 
 ## Clinical data description for all cohorts
 
+#### BRCA TCGA
+
 Variables included: age, gender, race, histological type, pam50 subtype
 
 ```{r}
 
 #######################     BRCA-TCGA    #######################################
+#Import curated clinical data from BMC's article
+pam50_bmc <- read_csv("pam_50_bmc.csv")
 
-clinical_BRCA_xena$sample_id <- gsub("-",
-                                     ".",
-                                     clinical_BRCA_xena$submitter_id.samples)
+tcga_clinical_xena = tcga_clinical_xena |>  # [1] 1217  142
+  mutate(sample_id = gsub(".$", "", submitter_id.samples))
 
-clinical_BRCA_xena <- clinical_BRCA_xena[clinical_BRCA_xena$sample_id %in% colnames(BRCA.htseq_counts_round),]
+tcga_clinical_xena_1 <- left_join(tcga_clinical_xena, # [1] 1217  150
+                                  pam50_bmc,
+                                  by = "sample_id")
 
-clinical_BRCA_xena_1 = clinical_BRCA_xena |>  
-  mutate(sample.id = gsub(".$", "", submitter_id.samples))
-
-clinical_BRCA_xena_1 <- left_join(clinical_BRCA_xena_1,
-                                  pam_50_bmc,
-                                  by = "sample.id")
-
-clinical_BRCA_xena_1 <- clinical_BRCA_xena_1 |> mutate(
+tcga_clinical_xena_1_before <- tcga_clinical_xena_1 |> mutate(
   age_at_diagnosis = ff_label(age_at_initial_pathologic_diagnosis,
                               "Age at diagnosis"),
   race = race.demographic |>
     fct_recode(
       "White" = "white",
-      "Black or Afro-american" = "black or african american",
+      "Black or African American" = "black or african american",
       "Asian" = "asian",
       "American" = "american indian or alaska native",
       "Not Reported" = "not reported",
@@ -193,11 +209,26 @@ clinical_BRCA_xena_1 <- clinical_BRCA_xena_1 |> mutate(
                 "HER2",
                 "Luminal A",
                 "Luminal B",
-                "Normal") |>
-    ff_label("PAM50 subtype")
+                "Normal",
+                "Normal Tissue") |>
+    ff_label("PAM50 subtype"),
+  
+  radiation_therapy.c = radiation_therapy |>
+    fct_recode("NA" = "") |> 
+    fct_relevel("Yes",
+                "No",
+                "NA") |>
+    ff_label("Radiation therapy"),
+  
+  neoadjuvant_treatment = history_of_neoadjuvant_treatment |>
+    fct_recode("NA" = "") |> 
+    fct_relevel("Yes",
+                "No",
+                "NA") |>
+    ff_label("Neoadjuvant treatment")
 )
 
-brca_table_before <- clinical_BRCA_xena_1 |>
+brca_table_before <- tcga_clinical_xena_1_before |>
   tbl_summary(
     include = c(
       age_at_diagnosis,
@@ -205,26 +236,43 @@ brca_table_before <- clinical_BRCA_xena_1 |>
       sample_type,
       pathologic_stage,
       Histological_type,
-      pam50
+      pam50,
+      radiation_therapy,
+      neoadjuvant_treatment
     )
   )
 
 ## Table after remove:
-##    Primary Tumor with no pam50
-##    Different patological stage to I, II, and III
-##    Different histological stage to Infiltrating duc and Infiltrating
+##    a) Primary Tumor with no pam50
+##    b) Different patological stage to I, II, and III
+##    c) Different histological stage than Infiltrating ductal car 
+##    and Infiltrating Lobular carcinoma
 
-brca_tcga_clinical <- clinical_BRCA_xena_1 |> 
-  filter(sample_type == "Solid Tissue Normal" & !is.na(pam50) |
-         (pathologic_stage
-          %in% c("Stage I", "Stage II", "Stage III")
+tcga_clinical_xena_1 <- tcga_clinical_xena_1_before |> 
+  filter(sample_type == "Solid Tissue Normal" |
+           pathologic_stage %in% c("Stage I",
+                                  "Stage II",
+                                  "Stage III")
           & !is.na(pam50) & Histological_type
-          %in% c("Infiltrating Ductal Carcinoma", "Infiltrating Lobular Carcinoma")))
+          %in% c("Infiltrating Ductal Carcinoma", 
+                 "Infiltrating Lobular Carcinoma"))
 
-brca_table = brca_tcga_clinical |> tbl_summary(
-  include = c(age_at_diagnosis, race, sample_type, 
-              pathologic_stage, Histological_type, 
-              pam50)
+
+
+
+
+brca_table <- tcga_clinical_xena_1 |>
+  tbl_summary(
+    include = c(
+      age_at_diagnosis,
+      race,
+      sample_type,
+      pathologic_stage,
+      Histological_type,
+      pam50,
+      radiation_therapy,
+      neoadjuvant_treatment
+    )
   )
 
 
@@ -238,8 +286,11 @@ save_as_docx(brca_table, path = "brca_table.docx", align = "center")
 
 
 
+```
 
-#########################    METABRIC   ########################################
+#### METABRIC
+```{r}
+
 
 metabric_clinical <- clean_names(metabric_clinical) # Cleaning names
 
@@ -277,7 +328,7 @@ metabric_clinical_1 <- metabric_clinical_0 |> mutate(
       "Luminal B" = "LumB"
     ) |>
     fct_relevel("Basal",
-                "HER2",
+                "HER2 enriched",
                 "Luminal A",
                 "Luminal B",
                 "Claudin-low",
@@ -319,52 +370,62 @@ metabric_table <- metabric_clinical_1 |>
 
 ```
 
-# Exploratory analysis for BRCA-TCGA
+## Exploratory analysis for BRCA-TCGA
 
 Main references https://www.bioconductor.org/packages/release/workflows/vignettes/rnaseqGene/inst/doc/rnaseqGene.html number of total samples: (methods) https://www.nature.com/articles/s41598-023-40042-7
 
-## Pre-filtering and transformation
-
+### Construct S4
 ```{r}
-BRCA.htseq_counts_round = BRCA.htseq_counts_round |> 
-  select(clinical_BRCA_xena_1$sample_id)
 
 ## Construct S4 object before
+
+BRCA.htseq_counts_round_before = BRCA.htseq_counts_round_before |> ## Make coincide the order
+  select(tcga_clinical_xena_1_before$sample.id) # lenght sample.id = [1] 1217
+
+tcga_clinical_xena_1_before <- tcga_clinical_xena_1_before  |> 
+  select(sample.id, everything())
+
 dds_tcga_before = DESeqDataSetFromMatrix(
-  countData = BRCA.htseq_counts_round,
-  colData = clinical_BRCA_xena_1,
+  countData = BRCA.htseq_counts_round_before,
+  colData = tcga_clinical_xena_1_before,
   design = ~ sample_type
 )
 
+## Construct S4 object 
 
+BRCA.htseq_counts_round = BRCA.htseq_counts_round_before |> ## match the order
+  select(tcga_clinical_xena_1$sample.id) # lenght sample.id = [1] 1017
 
-brca_tcga_clinical$sample_id <- gsub("-",
-                                     ".",
-                                     brca_tcga_clinical$submitter_id.samples)
+tcga_clinical_xena_1 <- tcga_clinical_xena_1  |> 
+  select(sample.id, everything())
 
-BRCA.htseq_counts_round <- BRCA.htseq_counts_round |>  select(brca_tcga_clinical$sample_id)
-
-## Construct S4 object before
 dds_tcga = DESeqDataSetFromMatrix(
   countData = BRCA.htseq_counts_round,
-  colData = brca_tcga_clinical,
-  design = ~ pam50
+  colData = tcga_clinical_xena_1,
+  design = ~ sample_type
 )
 
-## Pre-filtering BRCA-TCGA: based on the smallest group size for sample_type
-table(clinical_BRCA_xena_1$sample_type) # Metastatic 7,
+```
+
+### Pre-filtering and transformation
+
+```{r}
+## Pre-filtering based on the smallest group size for sample_type
+
+print(brca_table_before)
 print(brca_table) # smallest group is HER2 enriched = 71
 
-smallestGroupSize_before = 7
-smallestGroupSize = 71
+smallestGroupSize_before = 113
+smallestGroupSize = 113
 
-nrow(dds_tcga) # 60488
+nrow(dds_tcga_before) # 1217 x 60488
+nrow(dds_tcga) # 1018 x 60488
 
-keep_before = rowSums(counts(dds_tcga) >= 10) >= smallestGroupSize_before
+keep_before = rowSums(counts(dds_tcga_before) >= 10) >= smallestGroupSize_before
 keep = rowSums(counts(dds_tcga) >= 10) >= smallestGroupSize 
 
-dds_tcga_before = dds_tcga_before[keep_before,] # nrow = 37889
-dds_tcga = dds_tcga[keep,] # nrow = 27337
+dds_tcga_before = dds_tcga_before[keep_before,] # nrow = 25832
+dds_tcga = dds_tcga[keep,] # nrow = 25832
 
 ## Transformation using variance stabilizing transformation (vst) for 
 ## negative binomial data
@@ -414,12 +475,10 @@ corr = ggplot(df, aes(x = x, y = y)) + geom_hex(bins = 80) +
 To see if fit the expectation from the experiment's design: Normal tissue should be separated from tumoral tissue
 
 ```{r}
+## Caculate sample dist
 #sampleDists_before = dist(t(assay(vsd_before)))
 #sampleDists = dist(t(assay(vsd)))
 
-library(pheatmap)
-library(RColorBrewer)
-library(gridExtra)
 ## On a heatmap
 
 sampleDistMatrix_before = as.matrix(sampleDists_before)
@@ -428,6 +487,9 @@ sampleDistMatrix = as.matrix(sampleDists)
 rownames(sampleDistMatrix) = paste(vsd$sample_type, 
                                    vsd$sample_id, 
                                    sep = " - ")
+#alternative
+rownames(sampleDistMatrix) = paste(vsd$pam50)
+
 colnames(sampleDistMatrix) = NULL
 colors = colorRampPalette(rev(brewer.pal(9, "Blues")))(255)
 pheatmap(sampleDistMatrix,
@@ -435,7 +497,7 @@ pheatmap(sampleDistMatrix,
          clustering_distance_cols = sampleDists,
          col = colors)
 ## PCA
-pca_sample_before = plotPCA(vsd, intgroup = "sample_type") +
+pca_sample_before = plotPCA(vsd_before, intgroup = "sample_type") +
   ggtitle("Before filtering") +
   theme(text = element_text(size = 18))
 
@@ -467,7 +529,7 @@ grid.arrange(pca_hist_before, pca_hist, nrow = 2)
 
 ```
 
-## EDA: Sample distances with  MDS
+### Sample distances with Multidimentional Scaling (MDS)
 
 ```{r}
 library("glmpca")
@@ -484,11 +546,33 @@ mds = ggplot(mds, aes(x = `1`, y = `2`, color = pam50, shape = sample_type)) +
   geom_point(size = 4) + coord_fixed() + ggtitle("MDS with VST data") +
   theme(text = element_text(size = 18))
 
-grid.arrange(mds_before, mds, ncol = 2)
+grid.arrange(mds_before, mds, ncol = 2) ## Outliers detected !
 ```
 
+## Exploratory analysis for BRCA-TCGA with metabolic genes
 
-## test
+## Metabolic genes curated by Gong *et al*
+
+### First exploration of metabolic genes
+
+```{r}
+metab_genes <- read_csv("metabolic_genes_gong.et.al.csv")
+
+dim(metab_genes) # [1] 1661    2
+table(metab_genes[,2])
+length(unique(metab_genes$gene_symbol)) #[1] 1661
+length(unique(metab_genes$metabolic_pathway)) #[1] 302
+```
+
+### First exploration of genes in TCGA data
+
+```{r}
+vsd
+```
+
+### Test section
+
+Here we test codes
 
 ```{r}
 library(dplyr)
