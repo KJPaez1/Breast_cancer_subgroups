@@ -1,5 +1,5 @@
 ---
-title: "Data retrieval and normalization"
+title: "Data retrieval, EDA, and normalization"
 format: html
 editor: visual
 ---
@@ -16,24 +16,26 @@ library(TCGAbiolinks)
 library(GEOquery)
 library(limma)
 library(gtsummary)
-library(rfextras)
-library(FactoMineR)
-library(factoextra)
 library(reportfactory)
-library(car)
-library(rfextras)
-library(reportfactory)
+
 library(tidyverse)
-library(finalfit)
 library(DESeq2)
-library(flextable)
 library(gridExtra)
 library(pheatmap)
 library(RColorBrewer)
 library(gridExtra)
+
+library(factoextra)
+library(FactoMineR)
+library(reportfactory)
+library(car)
+library(rfextras)
+library(finalfit)
+library(flextable)
+library(janitor)
 ```
 
-**Theme for tables with gtsummary**
+#### Theme for tables with gtsummary
 
 ```{r}
 my_theme <-
@@ -109,11 +111,11 @@ tcga_clinical_xena <- tcga_clinical_xena[tcga_clinical_xena$sample.id %in% colna
 
 #### METABRIC
 
-Retrieved from CBioportal
+Retrieved from CBioportal. Experiment type: microarray
 
 ```{r}
 #Expression
-METABRIC_expression = read.table(file = "data_mrna_illumina_microarray.txt",
+metabric_expression = read.table(file = "data_mrna_illumina_microarray.txt",
                                sep = "\t",
                                header = T)
 
@@ -147,15 +149,14 @@ gsetGSE134359 <-
 gsetGSE25055 <- getGEO("GSE25055", GSEMatrix = TRUE, getGPL = FALSE)
 ```
 
-## Clinical data description for all cohorts
+## Clinical description 
 
-#### BRCA TCGA
+#### BRCA-TCGA
 
-Variables included: age, gender, race, histological type, pam50 subtype
+Variables included (if available): age, sex, race, sample type, histological type, 
+pathological classification, pam50 subtype, treatment received. 
 
 ```{r}
-
-#######################     BRCA-TCGA    #######################################
 #Import curated clinical data from BMC's article
 pam50_bmc <- read_csv("pam_50_bmc.csv")
 
@@ -257,10 +258,6 @@ tcga_clinical_xena_1 <- tcga_clinical_xena_1_before |>
           %in% c("Infiltrating Ductal Carcinoma", 
                  "Infiltrating Lobular Carcinoma"))
 
-
-
-
-
 brca_table <- tcga_clinical_xena_1 |>
   tbl_summary(
     include = c(
@@ -283,40 +280,40 @@ save_as_docx(brca_table_before, path = "brca_table_before.docx", align = "center
 
 brca_table <- as_flex_table(brca_table)
 save_as_docx(brca_table, path = "brca_table.docx", align = "center")
-
-
-
 ```
 
 #### METABRIC
 ```{r}
-
-
 metabric_clinical <- clean_names(metabric_clinical) # Cleaning names
 
 # metabric_clinical: 2509 x 39
 metabric_clinical = metabric_clinical |>  
-  mutate(sample_id = gsub("-", ".", patient_id)) # match sintax
+  mutate(sample_id = gsub("-", ".", patient_id)) # match syntax
 
-# metabric_clinical_0: dim 1980 x 39
+# metabric_clinical: [1] 2509   39 ; metabric_clinical_0: dim 1980 x 39
 metabric_clinical_0 <- metabric_clinical[
-  metabric_clinical$sample_id %in% colnames(METABRIC_expression),] 
+  metabric_clinical$sample_id %in% colnames(metabric_expression),] 
 
+# Recode
 metabric_clinical_1 <- metabric_clinical_0 |> mutate(
-  
   age_at_diagnosis = ff_label(age_at_diagnosis,
                               "Age at diagnosis"),
-  
   sample_type = sample_type |>
     fct_relevel("Primary") |>
     ff_label("Sample type"),
   
-  tumor_stage = as.factor(tumor_stage) |> 
-    fct_recode("Stage I" = "1",
+  tumor_stage.c = as.factor(tumor_stage) |>
+    fct_na_value_to_level() |>
+    fct_recode("Stage 0" = "0",
+               "Stage I" = "1",
                "Stage II" = "2",
                "Stage III" = "3",
                "Stage IV" = "4",
-               "Unwknown/NA" = "0"),
+               "Unknown" = "NA") |>
+    
+    fct_relevel("Stage 0", "Stage I", "Stage II", "Stage III", 
+                "Stage IV", "Unknown") |>
+    ff_label("Tumor stage"),
   
   cancer_type_detailed = as.factor(cancer_type_detailed) |> 
     ff_label("Histological type"),
@@ -348,17 +345,16 @@ metabric_clinical_1 <- metabric_clinical_0 |> mutate(
       "Yes" = "YES",
       "No" = "NO"
     ) |> 
-    ff_label("Received radiotherapy"),
-  
-)
+    ff_label("Received radiotherapy")
+  )
 
-
-metabric_table <- metabric_clinical_1 |>
+# Tables
+metabric_table_before <- metabric_clinical_1 |>
   tbl_summary(
     include = c(
       age_at_diagnosis,
       sample_type,
-      tumor_stage,
+      tumor_stage.c,
       cancer_type_detailed,
       pam50_claudin_low_subtype,
       chemotherapy,
@@ -366,17 +362,39 @@ metabric_table <- metabric_clinical_1 |>
     )
   )
 
-####################   GEO datasets    #########################################
+metabric_table <- metabric_clinical_1 |>
+  filter(cancer_type_detailed %in% c("Breast Invasive Ductal Carcinoma",
+                                     "Breast Invasive Lobular Carcinoma",
+                                     "Breast Mixed Ductal and Lobular Carcinoma") &
+           pam50_claudin_low_subtype != "NC"
+           ) |> 
+  tbl_summary(
+    include = c(
+      age_at_diagnosis,
+      sample_type,
+      tumor_stage.c,
+      cancer_type_detailed,
+      pam50_claudin_low_subtype,
+      chemotherapy,
+      radio_therapy
+    )
+  )
+
+metabric_table_before <- as_flex_table(metabric_table_before)
+save_as_docx(metabric_table_before, path = "metabric_table_before.docx", align = "center")
+
+metabric_table <- as_flex_table(metabric_table)
+save_as_docx(metabric_table, path = "metabric_table.docx", align = "center")
 
 ```
 
-## Exploratory analysis for BRCA-TCGA
+## Exploratory analysis 
 
 Main references https://www.bioconductor.org/packages/release/workflows/vignettes/rnaseqGene/inst/doc/rnaseqGene.html number of total samples: (methods) https://www.nature.com/articles/s41598-023-40042-7
 
-### Construct S4
-```{r}
+### BRCA TCGA
 
+```{r}
 ## Construct S4 object before
 
 BRCA.htseq_counts_round_before = BRCA.htseq_counts_round_before |> ## Make coincide the order
@@ -525,7 +543,7 @@ pca_hist = plotPCA(vsd, intgroup = "Histological_type") +
 
 grid.arrange(pca_pam50_before, pca_pam50, ncol = 2)
 grid.arrange(pca_sample_before, pca_sample, ncol = 2)
-grid.arrange(pca_hist_before, pca_hist, nrow = 2)
+grid.arrange(pca_hist_before, pca_hist, ncol = 2)
 
 ```
 
