@@ -149,12 +149,11 @@ gsetGSE134359 <-
 gsetGSE25055 <- getGEO("GSE25055", GSEMatrix = TRUE, getGPL = FALSE)
 ```
 
-## Clinical description 
+## Clinical description
 
 #### BRCA-TCGA
 
-Variables included (if available): age, sex, race, sample type, histological type, 
-pathological classification, pam50 subtype, treatment received. 
+Variables included (if available): age, sex, race, sample type, histological type, pathological classification, pam50 subtype, treatment received.
 
 ```{r}
 #Import curated clinical data from BMC's article
@@ -283,6 +282,7 @@ save_as_docx(brca_table, path = "brca_table.docx", align = "center")
 ```
 
 #### METABRIC
+
 ```{r}
 metabric_clinical <- clean_names(metabric_clinical) # Cleaning names
 
@@ -388,7 +388,7 @@ save_as_docx(metabric_table, path = "metabric_table.docx", align = "center")
 
 ```
 
-## Exploratory analysis 
+## Exploratory analysis
 
 Main references https://www.bioconductor.org/packages/release/workflows/vignettes/rnaseqGene/inst/doc/rnaseqGene.html number of total samples: (methods) https://www.nature.com/articles/s41598-023-40042-7
 
@@ -581,6 +581,7 @@ table(metab_genes[,2])
 length(unique(metab_genes$gene_symbol)) #[1] 1661
 length(unique(metab_genes$metabolic_pathway)) #[1] 302
 ```
+
 ### Convert ENSEMBL IDs to gene symbols
 
 ```{r}
@@ -648,7 +649,6 @@ metab_genes_4 <- ## definitive list of genes: 4 less. [1] 1657    5
   slice(1L)
 ```
 
-
 ### Subset metabolic genes from TCGA BRCA
 
 ```{r}
@@ -668,10 +668,151 @@ BRCA_TCGA_metab_genes =
 BRCA_TCGA_metab_genes # [1] 1657 1018
 ```
 
-### 
+### Exploratory analuysis with the metabolic genes - BRCA TCGA
+
+#### Construct S4 object
+
+```{r include=FALSE}
+BRCA_TCGA_metab_genes = ## match the order
+  BRCA_TCGA_metab_genes |>
+  select(tcga_clinical_xena_1$sample.id) # lenght sample.id = [1] 1018
+
+dds_tcga_metab_genes = 
+  DESeqDataSetFromMatrix(countData = BRCA_TCGA_metab_genes,
+                         colData = tcga_clinical_xena_1,
+                         design = ~ sample_type)
+```
+
+### Pre-filtering and transformation
+It is ommited for metabolic genes, but if i wouldn't, 
+it would be based on the smallest group size for sample_type
+
+```{r}
+#print(brca_table) # smallest group Solid Tissue Normal, n = 113
+#smallestGroupSize = 113
+nrow(dds_tcga_metab_genes) # [1] 1657
+
+# keep_metab_genes = rowSums(counts(dds_tcga_metab_genes) >= 10) >= smallestGroupSize 
+
+# dds_tcga_metab_genes = dds_tcga_metab_genes[keep,] 
+
+## Transformation using variance stabilizing transformation (vst) for 
+## negative binomial data
+vsd_metab_genes = vst(dds_tcga_metab_genes, blind = FALSE)
+head(assay(vsd_metab_genes), 3)
+
+## Transformation for comparison with rlog and 
+#rld_metab_genes = rlog(dds_tcga_metab_genes, blind = FALSE) # Too heavy !!!
+#head(assay(rld_metab_genes), 3)
+
+## Transformation for comparison to log2 + 1
+dds_tcga_metab_genes = estimateSizeFactors(dds_tcga_metab_genes)
+
+df_metab_genes = 
+  bind_rows(as.data.frame(log2(counts(dds_tcga_metab_genes, normalized = TRUE)[,1:2] + 1)) |>
+              mutate(transformation = "log2(x + 1)"),
+            as.data.frame(assay(vsd)[, 1:2]) |>
+              mutate(transformation = "vst")
+            )
+
+colnames(df_metab_genes)[1:2] = c("x", "y")
+
+lvls = c("log2(x + 1)", "vst")
+
+df_metab_genes$transformation = factor(df_metab_genes$transformation, 
+                                       levels = lvls)
+
+corr_metab_genes = 
+  ggplot(df_metab_genes,
+         aes(x = x, y = y)) +
+  geom_hex(bins = 80) +
+  coord_fixed() + 
+  facet_grid(. ~ transformation) +
+  theme(text = element_text(size = 28))
+
+```
+
+## Sample distances with PCA
+
+To see if fit the expectation from the experiment's design: Normal tissue should be separated from tumoral tissue
+
+```{r}
+## Caculate sample dist
+sampleDists_metab_genes = dist(t(assay(vsd_metab_genes)))
+
+## On a heatmap
+
+sampleDistMatrix_metab_genes = as.matrix(sampleDists_metab_genes)
+
+rownames(sampleDistMatrix_metab_genes) =
+  paste(vsd_metab_genes$sample_type,
+        vsd_metab_genes$sample_id,
+        sep = " - ")
+
+#alternative
+#rownames(sampleDistMatrix_metab_genes) = paste(vsd_metab_genes$pam50)
+
+colnames(sampleDistMatrix_metab_genes) = NULL
+colors = colorRampPalette(rev(brewer.pal(9, "Blues")))(255)
+pheatmap(sampleDistMatrix_metab_genes,
+         clustering_distance_rows = sampleDists_metab_genes,
+         clustering_distance_cols = sampleDists_metab_genes,
+         col = colors)
+```
+
+## PCA
+```{r}
+pca_sample_before = plotPCA(vsd_before, intgroup = "sample_type") +
+  ggtitle("Before filtering") +
+  theme(text = element_text(size = 18))
+
+pca_sample = plotPCA(vsd, intgroup = "sample_type") +
+  ggtitle("After filtering") +
+  theme(text = element_text(size = 18))
 
 
+pca_pam50_before = plotPCA(vsd_before, intgroup = "pam50") +
+  ggtitle("Before filtering") +
+  theme(text = element_text(size = 18))
 
+pca_pam50 = plotPCA(vsd, intgroup = "pam50") + 
+  ggtitle("After filtering") +
+  theme(text = element_text(size = 18))
+
+
+pca_hist_before = plotPCA(vsd_before, intgroup = "Histological_type") +
+  ggtitle("Before filtering") +
+  theme(text = element_text(size = 18))
+
+pca_hist = plotPCA(vsd, intgroup = "Histological_type") + 
+  ggtitle("After filtering") +
+  theme(text = element_text(size = 18))
+
+grid.arrange(pca_pam50_before, pca_pam50, ncol = 2)
+grid.arrange(pca_sample_before, pca_sample, ncol = 2)
+grid.arrange(pca_hist_before, pca_hist, ncol = 2)
+
+```
+
+### Sample distances with Multidimentional Scaling (MDS)
+
+```{r}
+library("glmpca")
+
+mds_before = as.data.frame(colData(vsd_before)) |> 
+  cbind(cmdscale(sampleDistMatrix_before))
+mds_before = ggplot(mds_before, aes(x = `1`, y = `2`, color = pam50, shape = sample_type)) +
+  geom_point(size = 4) + coord_fixed() + ggtitle("MDS with VST data - Before filtering") +
+  theme(text = element_text(size = 18))
+
+mds = as.data.frame(colData(vsd)) |> 
+  cbind(cmdscale(sampleDistMatrix))
+mds = ggplot(mds, aes(x = `1`, y = `2`, color = pam50, shape = sample_type)) +
+  geom_point(size = 4) + coord_fixed() + ggtitle("MDS with VST data") +
+  theme(text = element_text(size = 18))
+
+grid.arrange(mds_before, mds, ncol = 2) ## Outliers detected !
+```
 
 ### Test section
 
