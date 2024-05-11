@@ -581,12 +581,97 @@ table(metab_genes[,2])
 length(unique(metab_genes$gene_symbol)) #[1] 1661
 length(unique(metab_genes$metabolic_pathway)) #[1] 302
 ```
-
-### First exploration of genes in TCGA data
+### Convert ENSEMBL IDs to gene symbols
 
 ```{r}
-vsd
+library("AnnotationDbi")
+library("org.Hs.eg.db")
+require('biomaRt')
+require("dbplyr")
+
+mart <- useMart('ENSEMBL_MART_ENSEMBL')
+mart <- useDataset('hsapiens_gene_ensembl', mart)
+
+annotLookup <- getBM(
+  mart = mart,
+  attributes = c(
+    "hgnc_symbol",
+    "ensembl_gene_id",
+    "gene_biotype"),
+  uniqueRows = TRUE)
+
+metab_genes = rename(metab_genes, hgnc_symbol = gene_symbol) ## change name
+
+merged_df <- left_join(metab_genes, annotLookup, by = "hgnc_symbol") ## matching
+
+sum(is.na(merged_df$ensembl_gene_id)) ## No ENSEMBL ID = 124
+
+alias_and_apro = 
+  merged_df |>
+  filter(is.na(ensembl_gene_id)) |>
+  select(hgnc_symbol)
+
+dim(alias_and_apro) ## Subset those with no ENSEMBL ID
+
+write.csv(alias_and_apro, "alias_and_apro.csv") ## Enter to https://www.genenames.org/tools/multi-symbol-checker/ to find the oficial names
+
+merged_df_2 <- left_join(merged_df, hgnc.symbol.check, by = c("hgnc_symbol" = "Input")) ## match to oficial names 
+
+metab_genes_1 <- 
+  merged_df_2 |>
+  mutate(Approved.symbol = coalesce(Approved.symbol, hgnc_symbol)) |> 
+  select(Approved.symbol, metabolic_pathway, hgnc_symbol) ## construct a single column with new oficial and old ones
+
+## look ENSEMBLE again with the new column
+metab_genes_2 = 
+  left_join(metab_genes_1, annotLookup, by = c("Approved.symbol" = "hgnc_symbol"))
+
+
+## Remove suffix and match ensemble IDs
+ENS_with_suf = data.frame(ENS_S = rownames(BRCA.htseq_counts_round))
+
+ENS_without_suf =
+  data.frame(ENS_w = ENS_with_suf$ENS_S <- gsub("\\.\\d+", "", ENS_with_suf$ENS_S))
+
+dim(ENS_without_suf)
+
+ENS_without_suf |> 
+  filter(metab_genes_2$ensembl_gene_id %in% ENS_without_suf$ENS_w)
+
+ENS_without_suf = ENS_without_suf |> rename("ensembl_gene_id" = ENS_w)
+
+metab_genes_3 = merge(ENS_without_suf, metab_genes_2, by = "ensembl_gene_id")
+
+metab_genes_4 <- ## definitive list of genes: 4 less. [1] 1657    5
+  metab_genes_3 |> 
+  group_by(ensembl_gene_id) |> 
+  slice(1L)
 ```
+
+
+### Subset metabolic genes from TCGA BRCA
+
+```{r}
+ENS_rownames = data.frame(ENS_S = rownames(BRCA.htseq_counts_round))
+
+ENS_rownames <- gsub("\\.\\d+", "", ENS_rownames$ENS_S)
+
+BRCA.htseq_counts_round_no_suf = BRCA.htseq_counts_round
+
+rownames(BRCA.htseq_counts_round_no_suf) = ENS_rownames 
+head(rownames(BRCA.htseq_counts_round_no_suf), 100) == head(ENS_rownames, 100)
+
+BRCA_TCGA_metab_genes =
+  BRCA.htseq_counts_round_no_suf[row.names(BRCA.htseq_counts_round_no_suf) %in%
+                                   metab_genes_4$ensembl_gene_id, ]
+
+BRCA_TCGA_metab_genes # [1] 1657 1018
+```
+
+### 
+
+
+
 
 ### Test section
 
