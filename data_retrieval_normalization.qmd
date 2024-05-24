@@ -284,7 +284,7 @@ save_as_docx(brca_table, path = "brca_table.docx", align = "center")
 #### METABRIC
 
 ```{r}
-metabric_clinical <- clean_names(metabric_clinical) # Cleaning names
+metabric_clinical <- clean_names(metabric_clinical) # Cleaning names 
 
 # metabric_clinical: 2509 x 39
 metabric_clinical = metabric_clinical |>  
@@ -601,7 +601,7 @@ annotLookup <- getBM(
     "gene_biotype"),
   uniqueRows = TRUE)
 
-metab_genes = rename(metab_genes, hgnc_symbol = gene_symbol) ## change name
+metab_genes = dplyr::rename(metab_genes, hgnc_symbol = gene_symbol) ## change name
 
 merged_df <- left_join(metab_genes, annotLookup, by = "hgnc_symbol") ## matching
 
@@ -610,18 +610,21 @@ sum(is.na(merged_df$ensembl_gene_id)) ## No ENSEMBL ID = 124
 alias_and_apro = 
   merged_df |>
   filter(is.na(ensembl_gene_id)) |>
-  select(hgnc_symbol)
+  dplyr::select(hgnc_symbol)
 
 dim(alias_and_apro) ## Subset those with no ENSEMBL ID
 
 write.csv(alias_and_apro, "alias_and_apro.csv") ## Enter to https://www.genenames.org/tools/multi-symbol-checker/ to find the oficial names
 
+hgnc.symbol.check <-
+  read.csv("~/Breast_cancer_subgroups/hgnc-symbol-check.csv")
+
 merged_df_2 <- left_join(merged_df, hgnc.symbol.check, by = c("hgnc_symbol" = "Input")) ## match to oficial names 
 
 metab_genes_1 <- 
   merged_df_2 |>
-  mutate(Approved.symbol = coalesce(Approved.symbol, hgnc_symbol)) |> 
-  select(Approved.symbol, metabolic_pathway, hgnc_symbol) ## construct a single column with new oficial and old ones
+  mutate(Approved.symbol = coalesce(Approved.symbol, hgnc_symbol)) |>
+  dplyr::select(Approved.symbol, metabolic_pathway, hgnc_symbol) ## construct a single column with new oficial and old ones
 
 ## look ENSEMBLE again with the new column
 metab_genes_2 = 
@@ -636,17 +639,17 @@ ENS_without_suf =
 
 dim(ENS_without_suf)
 
-ENS_without_suf |> 
-  filter(metab_genes_2$ensembl_gene_id %in% ENS_without_suf$ENS_w)
+#ENS_without_suf |> 
+  #dplyr::filter(metab_genes_2$ensembl_gene_id %in% ENS_without_suf$ENS_w)
 
-ENS_without_suf = ENS_without_suf |> rename("ensembl_gene_id" = ENS_w)
+ENS_without_suf = ENS_without_suf |> dplyr::rename(ensembl_gene_id = ENS_w)
 
 metab_genes_3 = merge(ENS_without_suf, metab_genes_2, by = "ensembl_gene_id")
 
 metab_genes_4 <- ## definitive list of genes: 4 less. [1] 1657    5
   metab_genes_3 |> 
   group_by(ensembl_gene_id) |> 
-  slice(1L)
+  dplyr::slice(1L)
 ```
 
 ### Subset metabolic genes from TCGA BRCA
@@ -665,7 +668,7 @@ BRCA_TCGA_metab_genes =
   BRCA.htseq_counts_round_no_suf[row.names(BRCA.htseq_counts_round_no_suf) %in%
                                    metab_genes_4$ensembl_gene_id, ]
 
-BRCA_TCGA_metab_genes # [1] 1657 1018
+dim(BRCA_TCGA_metab_genes) # [1] 1657 1018
 ```
 
 ### Exploratory analuysis with the metabolic genes - BRCA TCGA
@@ -675,7 +678,7 @@ BRCA_TCGA_metab_genes # [1] 1657 1018
 ```{r include=FALSE}
 BRCA_TCGA_metab_genes = ## match the order
   BRCA_TCGA_metab_genes |>
-  select(tcga_clinical_xena_1$sample.id) # lenght sample.id = [1] 1018
+  dplyr::select(tcga_clinical_xena_1$sample.id) # lenght sample.id = [1] 1018
 
 dds_tcga_metab_genes = 
   DESeqDataSetFromMatrix(countData = BRCA_TCGA_metab_genes,
@@ -684,8 +687,8 @@ dds_tcga_metab_genes =
 ```
 
 ### Pre-filtering and transformation
-It is ommited for metabolic genes, but if i wouldn't, 
-it would be based on the smallest group size for sample_type
+
+It is ommited for metabolic genes, but if i wouldn't, it would be based on the smallest group size for sample_type
 
 ```{r}
 #print(brca_table) # smallest group Solid Tissue Normal, n = 113
@@ -709,7 +712,8 @@ head(assay(vsd_metab_genes), 3)
 dds_tcga_metab_genes = estimateSizeFactors(dds_tcga_metab_genes)
 
 df_metab_genes = 
-  bind_rows(as.data.frame(log2(counts(dds_tcga_metab_genes, normalized = TRUE)[,1:2] + 1)) |>
+  bind_rows(as.data.frame(log2(counts(dds_tcga_metab_genes, 
+                                      normalized = TRUE)[,1:2] + 1)) |>
               mutate(transformation = "log2(x + 1)"),
             as.data.frame(assay(vsd)[, 1:2]) |>
               mutate(transformation = "vst")
@@ -761,37 +765,27 @@ pheatmap(sampleDistMatrix_metab_genes,
 ```
 
 ## PCA
+
 ```{r}
-pca_sample_before = plotPCA(vsd_before, intgroup = "sample_type") +
-  ggtitle("Before filtering") +
+pca_sample_metab_genes = 
+  plotPCA(vsd_metab_genes, intgroup = "sample_type") +
+  ggtitle("By sample type") +
   theme(text = element_text(size = 18))
 
-pca_sample = plotPCA(vsd, intgroup = "sample_type") +
-  ggtitle("After filtering") +
+pca_pam50_metab_genes = 
+  plotPCA(vsd_metab_genes, intgroup = "pam50") + 
+  ggtitle("By PAM50 subtype") +
   theme(text = element_text(size = 18))
 
-
-pca_pam50_before = plotPCA(vsd_before, intgroup = "pam50") +
-  ggtitle("Before filtering") +
+pca_hist_metab_genes = 
+  plotPCA(vsd_metab_genes, intgroup = "Histological_type") + 
+  ggtitle("By histological subtype") +
   theme(text = element_text(size = 18))
 
-pca_pam50 = plotPCA(vsd, intgroup = "pam50") + 
-  ggtitle("After filtering") +
-  theme(text = element_text(size = 18))
-
-
-pca_hist_before = plotPCA(vsd_before, intgroup = "Histological_type") +
-  ggtitle("Before filtering") +
-  theme(text = element_text(size = 18))
-
-pca_hist = plotPCA(vsd, intgroup = "Histological_type") + 
-  ggtitle("After filtering") +
-  theme(text = element_text(size = 18))
-
-grid.arrange(pca_pam50_before, pca_pam50, ncol = 2)
-grid.arrange(pca_sample_before, pca_sample, ncol = 2)
-grid.arrange(pca_hist_before, pca_hist, ncol = 2)
-
+grid.arrange(pca_sample_metab_genes, 
+             pca_pam50_metab_genes, 
+             pca_hist_metab_genes,
+             ncol = 2)
 ```
 
 ### Sample distances with Multidimentional Scaling (MDS)
@@ -799,28 +793,90 @@ grid.arrange(pca_hist_before, pca_hist, ncol = 2)
 ```{r}
 library("glmpca")
 
-mds_before = as.data.frame(colData(vsd_before)) |> 
-  cbind(cmdscale(sampleDistMatrix_before))
-mds_before = ggplot(mds_before, aes(x = `1`, y = `2`, color = pam50, shape = sample_type)) +
-  geom_point(size = 4) + coord_fixed() + ggtitle("MDS with VST data - Before filtering") +
-  theme(text = element_text(size = 18))
+mds_metab_genes = 
+  as.data.frame(colData(vsd_metab_genes)) |>
+  cbind(cmdscale(sampleDistMatrix_metab_genes))
 
-mds = as.data.frame(colData(vsd)) |> 
-  cbind(cmdscale(sampleDistMatrix))
-mds = ggplot(mds, aes(x = `1`, y = `2`, color = pam50, shape = sample_type)) +
-  geom_point(size = 4) + coord_fixed() + ggtitle("MDS with VST data") +
+mds_metab_genes = 
+  ggplot(mds_metab_genes, 
+         aes(x = `1`, y = `2`, 
+             color = pam50, 
+             shape = sample_type)) +
+  geom_point(size = 4) + 
+  coord_fixed() + ggtitle("MDS with VST data - Metabolic Genes") +
   theme(text = element_text(size = 18))
-
-grid.arrange(mds_before, mds, ncol = 2) ## Outliers detected !
 ```
+
+### Calculation of the Global Difference Between a Pair of Expression Profiles
+
+ref: https://www.nature.com/articles/nbt.2530 ref: the main
+
+```{r}
+#Between tumors
+tumor_samples_ID <- colData(vsd_metab_genes)$sample_type == "Primary Tumor"
+nontumor_samples_ID <- colData(vsd_metab_genes)$sample_type == "Solid Tissue Normal"
+tumor_113 = 
+  data.frame(tumor_expr_matrix) |> 
+  dplyr::select(sample(colnames(tumor_expr_matrix), 113))
+
+tumor_samples_ID # 905
+nontumor_samples_ID # 113
+
+
+tumor_expr_matrix <- assay(vsd_metab_genes)[, tumor_samples_ID]
+nontumor_expr_matrix = assay(vsd_metab_genes)[, nontumor_samples_ID]
+
+tumor_and_nontumor_matrix <- cbind(tumor_expr_matrix, nontumor_expr_matrix) # first tumor
+colnames(tumor_and_nontumor_matrix) = NULL
+rownames(tumor_and_nontumor_matrix) = NULL
+
+sample_type = as.factor(c(rep("Tumor vs Tumor", 905), 
+                rep("Normal vs Normal", 113)))
+
+tumor_and_nontumor_matrix = t(tumor_and_nontumor_matrix)
+
+tumor_and_nontumor_g <- split.data.frame(tumor_and_nontumor_matrix,
+                                        sample_type) # Split dataframe by group
+
+d_tumor_vs_non_tumor <- lapply(tumor_and_nontumor_g, dist)
+
+n_t_vs_nont <- lengths(d_tumor_vs_non_tumor)
+
+d = unlist(d_tumor_vs_non_tumor) # combine
+
+g_mine <- rep(factor(levels(sample_type), 
+                levels = levels(sample_type)), n_t_vs_nont) # combine
+
+boxplot(d~g_mine,
+        outline = F,
+         border = c("cornflowerblue", "#E69F00"),
+        col = "white",
+        cex.lab = 1.8,
+        cex.axis = 1.5,
+        cex.sub = 1.5,
+        lwd = 5,
+        xlab = "",
+        ylab = "Euclidian expression distances",
+        boxwex = .65)
+
+
+
+```
+
 
 ### Test section
 
 Here we test codes
 
 ```{r}
-library(dplyr)
+set.seed(1234)
+a <- matrix(rnorm(250),nrow=25,ncol=10)
+fac <- as.factor(c(rep("A",8),rep("B",10),rep("C",7)))
 
-
-
+a_grp <- split.data.frame(a, fac)    ## split matrix by group
+d_grp <- lapply(a_grp, dist)         ## apply `dist` by group
+n_grp <- lengths(d_grp)              ## number of pairs by group
+d <- unlist(d_grp)                   ## combine
+g <- rep(factor(levels(fac), levels = levels(fac)), n_grp)  ## combine
+boxplot(d ~ g)  
 ```
