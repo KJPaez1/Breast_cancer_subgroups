@@ -814,10 +814,10 @@ ref: https://www.nature.com/articles/nbt.2530 ref: the main
 ```{r}
 #Between tumors
 tumor_samples_ID <- colData(vsd_metab_genes)$sample_type == "Primary Tumor"
+
 nontumor_samples_ID <- colData(vsd_metab_genes)$sample_type == "Solid Tissue Normal"
-tumor_113 = 
-  data.frame(tumor_expr_matrix) |> 
-  dplyr::select(sample(colnames(tumor_expr_matrix), 113))
+
+
 
 tumor_samples_ID # 905
 nontumor_samples_ID # 113
@@ -826,11 +826,20 @@ nontumor_samples_ID # 113
 tumor_expr_matrix <- assay(vsd_metab_genes)[, tumor_samples_ID]
 nontumor_expr_matrix = assay(vsd_metab_genes)[, nontumor_samples_ID]
 
-tumor_and_nontumor_matrix <- cbind(tumor_expr_matrix, nontumor_expr_matrix) # first tumor
+tumor_113_matrix = 
+  data.frame(tumor_expr_matrix) |> 
+  dplyr::select(sample(colnames(tumor_expr_matrix), 113))
+tumor_vs_normal_113 = cbind(tumor_113_matrix, nontumor_expr_matrix)
+
+tumor_and_nontumor_matrix <- cbind(tumor_vs_normal_113,
+                                   tumor_expr_matrix, 
+                                   nontumor_expr_matrix) # first tumor
+
 colnames(tumor_and_nontumor_matrix) = NULL
 rownames(tumor_and_nontumor_matrix) = NULL
 
-sample_type = as.factor(c(rep("Tumor vs Tumor", 905), 
+sample_type = as.factor(c(rep("Tumor vs Normal", 226), 
+                rep("Tumor vs Tumor", 905),
                 rep("Normal vs Normal", 113)))
 
 tumor_and_nontumor_matrix = t(tumor_and_nontumor_matrix)
@@ -849,18 +858,62 @@ g_mine <- rep(factor(levels(sample_type),
 
 boxplot(d~g_mine,
         outline = F,
-         border = c("cornflowerblue", "#E69F00"),
+         border = c("cornflowerblue", 
+                    "#E69F00", 
+                    "#e41a1c"),
         col = "white",
-        cex.lab = 1.8,
-        cex.axis = 1.5,
-        cex.sub = 1.5,
-        lwd = 5,
+        cex.lab = 1.9,
+        cex.axis = 1.7,
+        cex.sub = 1.7,
+        lwd = 6,
         xlab = "",
         ylab = "Euclidian expression distances",
-        boxwex = .65)
+        boxwex = .60,
+        frame = F)
+```
+
+tumor vs nontumor
+```{r}
+
+group = c(rep("tumor", 113), rep("non_tumor", 113))
+
+tumor_vs_normal_113_m = 
+  cbind(t(tumor_vs_normal_113), group)
+
+tumor_vs_normal_113_m = as.data.frame(tumor_vs_normal_113_m)
+
+TvsN_d_m = 
+  as.data.frame(tumor_vs_normal_113_m) |>
+  select(-group) |> 
+  dist() |> 
+  as.matrix()
+
+cb_g <- combn(tumor_vs_normal_113_m$group, m = 2)
+cb_i = combn(1:length(tumor_vs_normal_113_m$group), m = 2)
+
+
+corr_same_grp <- apply(cb_g, 2, function(x) x[1] == x[2]) %>%  # same groups
+  { cb_i[, ., drop= F] } %>%           # get indices
+  apply(2, function(x) TvsN_d_m[x[2], x[1]])
+
+corr_diff_grp <- apply(cb_g, 2, function(x) x[1] != x[2]) %>%  # different groups 
+  { cb_i[, ., drop= F] } %>%           # get indices
+  apply(2, function(x) TvsN_d_m[x[2], x[1]])
 
 
 
+
+
+##  distance as a matrix
+d_m <- df %>% 
+  select(-group) %>% 
+  dist() %>% 
+  as.matrix()
+
+##  combination of groups
+cb_g <- combn(df$group, m = 2)
+##  combination of indices
+cb_i <- combn(1:length(df$group), m= 2) 
 ```
 
 
@@ -880,3 +933,14 @@ d <- unlist(d_grp)                   ## combine
 g <- rep(factor(levels(fac), levels = levels(fac)), n_grp)  ## combine
 boxplot(d ~ g)  
 ```
+
+ggplot
+
+```{r}
+combn(letters[1:4], 2)
+(m <- combn(10, 5, min))   # minimum value in each combination
+mm <- combn(15, 6, function(x) matrix(x, 2, 3))
+
+
+```
+
