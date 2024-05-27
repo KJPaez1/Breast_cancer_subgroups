@@ -842,25 +842,41 @@ sample_type = as.factor(c(rep("Tumor vs Normal", 226),
                 rep("Tumor vs Tumor", 905),
                 rep("Normal vs Normal", 113)))
 
+sample_type_0 = as.factor(c(rep("T vs N", 226),
+                            rep("T vs T", 226), 
+                            rep("T vs N combined", 905),
+                            rep("N vs N", 113)))
+
+lev = c(rep("N vs N", 113), rep("T vs N combined", 226), rep("T vs T", 905), rep("T vs N", 113))
+
+sample_type_0 = factor(lev, levels=unique(lev))
+
 tumor_and_nontumor_matrix = t(tumor_and_nontumor_matrix)
 
 tumor_and_nontumor_g <- split.data.frame(tumor_and_nontumor_matrix,
                                         sample_type) # Split dataframe by group
 
 d_tumor_vs_non_tumor <- lapply(tumor_and_nontumor_g, dist)
-
+#d_tumor_vs_non_tumor_0
 n_t_vs_nont <- lengths(d_tumor_vs_non_tumor)
+n_t_vs_nont_0 <- lengths(d_tumor_vs_non_tumor_0)
 
 d = unlist(d_tumor_vs_non_tumor) # combine
+d_0 = unlist(d_tumor_vs_non_tumor_0) # combine
+
 
 g_mine <- rep(factor(levels(sample_type), 
                 levels = levels(sample_type)), n_t_vs_nont) # combine
 
-boxplot(d~g_mine,
+g_mine_0 <- rep(factor(levels(sample_type_0), 
+                levels = levels(sample_type_0)), n_t_vs_nont_0) # combine
+
+boxplot(d_0~g_mine_0,
         outline = F,
          border = c("cornflowerblue", 
                     "#E69F00", 
-                    "#e41a1c"),
+                    "#e41a1c",
+                    "#F8766D"),
         col = "white",
         cex.lab = 1.9,
         cex.axis = 1.7,
@@ -872,9 +888,8 @@ boxplot(d~g_mine,
         frame = F)
 ```
 
-tumor vs nontumor
+### tumor vs nontumor
 ```{r}
-
 group = c(rep("tumor", 113), rep("non_tumor", 113))
 
 tumor_vs_normal_113_m = 
@@ -900,7 +915,9 @@ corr_diff_grp <- apply(cb_g, 2, function(x) x[1] != x[2]) %>%  # different group
   { cb_i[, ., drop= F] } %>%           # get indices
   apply(2, function(x) TvsN_d_m[x[2], x[1]])
 
-
+corr_diff_grp_d = as.dist(corr_diff_grp) 
+d_tumor_vs_non_tumor_0 <- append(d_tumor_vs_non_tumor,
+                                 list(tumor_vs_normal_1 = corr_diff_grp_d))
 
 
 
@@ -932,15 +949,31 @@ n_grp <- lengths(d_grp)              ## number of pairs by group
 d <- unlist(d_grp)                   ## combine
 g <- rep(factor(levels(fac), levels = levels(fac)), n_grp)  ## combine
 boxplot(d ~ g)  
+
 ```
 
 ggplot
 
 ```{r}
-combn(letters[1:4], 2)
-(m <- combn(10, 5, min))   # minimum value in each combination
-mm <- combn(15, 6, function(x) matrix(x, 2, 3))
+# Sample numeric vector
+numeric_vector <- c(1, 2, 3, 4, 5, 6)
 
+# Convert the numeric vector into a matrix (example assumes it's symmetric and square)
+matrix_size <- sqrt(length(numeric_vector))
+matrix_data <- matrix(numeric_vector, nrow = matrix_size, ncol = matrix_size)
+
+# Convert the matrix to a dist object
+dist_object <- as.dist(matrix_data)
+
+# Include the dist object in a list
+dist_list <- list(dist_object)
+
+# Print the list
+print(dist_list)
+
+corr_diff_grp_d = as.dist(corr_diff_grp) 
+d_tumor_vs_non_tumor_0 <- append(d_tumor_vs_non_tumor,
+                                 list(tumor_vs_normal_1 = corr_diff_grp_d))
 
 ```
 
