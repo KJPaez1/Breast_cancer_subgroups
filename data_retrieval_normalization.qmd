@@ -688,7 +688,7 @@ dds_tcga_metab_genes =
 
 ### Pre-filtering and transformation
 
-It is ommited for metabolic genes, but if i wouldn't, it would be based on the smallest group size for sample_type
+This is skipped for metabolic genes, otherwise, it would be based on the smallest group size for sample_type (n=113)
 
 ```{r}
 #print(brca_table) # smallest group Solid Tissue Normal, n = 113
@@ -809,68 +809,99 @@ mds_metab_genes =
 
 ### Calculation of the Global Difference Between a Pair of Expression Profiles
 
-ref: https://www.nature.com/articles/nbt.2530 ref: the main
+Reference: https://www.nature.com/articles/nbt.2530
 
 ```{r}
-#Between tumors
-tumor_samples_ID <- colData(vsd_metab_genes)$sample_type == "Primary Tumor"
+tumor_samples_ID = colData(vsd_metab_genes)$sample_type == "Primary Tumor"
+nontumor_samples_ID = colData(vsd_metab_genes)$sample_type == "Solid Tissue Normal"
 
-nontumor_samples_ID <- colData(vsd_metab_genes)$sample_type == "Solid Tissue Normal"
+tumor_samples_ID # 905 tumors (TRUE)
+nontumor_samples_ID # 113 nontumor (TRUE)
 
-
-
-tumor_samples_ID # 905
-nontumor_samples_ID # 113
-
-
-tumor_expr_matrix <- assay(vsd_metab_genes)[, tumor_samples_ID]
-nontumor_expr_matrix = assay(vsd_metab_genes)[, nontumor_samples_ID]
-
+## Extract expression data
+tumor_expr_matrix <- assay(vsd_metab_genes)[, tumor_samples_ID] # [1] 1657  905
+nontumor_expr_matrix = assay(vsd_metab_genes)[, nontumor_samples_ID] #[1] 1657  113
 tumor_113_matrix = 
   data.frame(tumor_expr_matrix) |> 
   dplyr::select(sample(colnames(tumor_expr_matrix), 113))
+
+## For calculation of euclidian distances combined
 tumor_vs_normal_113 = cbind(tumor_113_matrix, nontumor_expr_matrix)
 
-tumor_and_nontumor_matrix <- cbind(tumor_vs_normal_113,
+## The matrix with 3 sub datasets
+tumor_and_nontumor_matrix <- cbind(tumor_vs_normal_113, 
                                    tumor_expr_matrix, 
                                    nontumor_expr_matrix) # first tumor
 
 colnames(tumor_and_nontumor_matrix) = NULL
 rownames(tumor_and_nontumor_matrix) = NULL
 
-sample_type = as.factor(c(rep("Tumor vs Normal", 226), 
+sample_type = as.factor(c(rep("Tumor vs Normal", 226), ## To keep the order
                 rep("Tumor vs Tumor", 905),
                 rep("Normal vs Normal", 113)))
 
-sample_type_0 = as.factor(c(rep("T vs N", 226),
+sample_type_0 = as.factor(c(rep("T vs N", 226), ## To keep the order
                             rep("T vs T", 226), 
                             rep("T vs N combined", 905),
                             rep("N vs N", 113)))
 
-lev = c(rep("N vs N", 113), rep("T vs N combined", 226), rep("T vs T", 905), rep("T vs N", 113))
+lev = c(rep("N vs N", 113), 
+        rep("T vs N combined", 226), 
+        rep("T vs T", 905), 
+        rep("T vs N", 113))
 
-sample_type_0 = factor(lev, levels=unique(lev))
-
+sample_type_0 = factor(lev, levels = unique(lev))
 tumor_and_nontumor_matrix = t(tumor_and_nontumor_matrix)
-
 tumor_and_nontumor_g <- split.data.frame(tumor_and_nontumor_matrix,
                                         sample_type) # Split dataframe by group
 
-d_tumor_vs_non_tumor <- lapply(tumor_and_nontumor_g, dist)
-#d_tumor_vs_non_tumor_0
-n_t_vs_nont <- lengths(d_tumor_vs_non_tumor)
-n_t_vs_nont_0 <- lengths(d_tumor_vs_non_tumor_0)
+## For calculation of euclidian distances between tumor vs non-tumor
 
-d = unlist(d_tumor_vs_non_tumor) # combine
-d_0 = unlist(d_tumor_vs_non_tumor_0) # combine
+group = c(rep("tumor", 113), rep("non_tumor", 113))
+
+tumor_vs_normal_113_m = 
+  cbind(t(tumor_vs_normal_113), group) # [1]  226 1658
+
+tumor_vs_normal_113_m = as.data.frame(tumor_vs_normal_113_m)
+
+TvsN_d_m = 
+  as.data.frame(tumor_vs_normal_113_m) |>
+  select(-group) |> 
+  dist() |> 
+  as.matrix()
+
+cb_g <- combn(tumor_vs_normal_113_m$group, m = 2)
+
+cb_i = combn(1:length(tumor_vs_normal_113_m$group), m = 2)
 
 
-g_mine <- rep(factor(levels(sample_type), 
-                levels = levels(sample_type)), n_t_vs_nont) # combine
+corr_same_grp <- apply(cb_g, 2, function(x) x[1] == x[2]) %>%  # same groups
+  { cb_i[, ., drop= F] } %>%           # get indices
+  apply(2, function(x) TvsN_d_m[x[2], x[1]])
+
+corr_diff_grp <- apply(cb_g, 2, function(x) x[1] != x[2]) %>%  # different groups 
+  { cb_i[, ., drop= F] } %>%           # get indices
+  apply(2, function(x) TvsN_d_m[x[2], x[1]])
+
+corr_diff_grp_d = as.dist(corr_diff_grp) 
+
+
+## Calculate distances
+d_tumor_vs_non_tumor = lapply(tumor_and_nontumor_g, dist) 
+
+## Add the distances between tumor vs non-tumor not combined
+d_tumor_vs_non_tumor_0 = append(d_tumor_vs_non_tumor,
+                                 list(tumor_vs_normal_1 = corr_diff_grp_d))
+## Both for
+n_t_vs_nont_0 <- lengths(d_tumor_vs_non_tumor_0) ## T vs NT both
+
+d_0 = unlist(d_tumor_vs_non_tumor_0) 
 
 g_mine_0 <- rep(factor(levels(sample_type_0), 
                 levels = levels(sample_type_0)), n_t_vs_nont_0) # combine
-
+```
+## Plot results
+```{r}
 boxplot(d_0~g_mine_0,
         outline = F,
          border = c("cornflowerblue", 
@@ -888,92 +919,34 @@ boxplot(d_0~g_mine_0,
         frame = F)
 ```
 
-### tumor vs nontumor
+## Diferential expression analysis
+- Main reference: https://bioconductor.org/packages/release/workflows/vignettes/rnaseqGene/inst/doc/rnaseqGene.html
 ```{r}
-group = c(rep("tumor", 113), rep("non_tumor", 113))
+dds_tcga_metab_genes = DESeq(dds_tcga_metab_genes)
 
-tumor_vs_normal_113_m = 
-  cbind(t(tumor_vs_normal_113), group)
+results_dds_metab = results(dds_tcga_metab_genes, 
+                            contrast = c("sample_type", "Primary Tumor", "Solid Tissue Normal"))
 
-tumor_vs_normal_113_m = as.data.frame(tumor_vs_normal_113_m)
+summary(results_dds_metab)
+```
+```{r}
+sum(results_dds_metab$padj < 0.05, na.rm=TRUE) # [1] 1322
+```
+```{r}
+resSig <- subset(results_dds_metab, padj < 0.1)
+head(resSig[ order(resSig$log2FoldChange, decreasing = TRUE), ])
+```
+```{r}
+topGene <- rownames(resSig)[which.min(resSig$padj)]
+plotCounts(dds_tcga_metab_genes, gene = topGene, intgroup=c("sample_type"))
+```
+```{r}
+library("ggbeeswarm")
+geneCounts <- plotCounts(dds_tcga_metab_genes, gene = topGene, intgroup = c("sample_type","pam50"),
+                         returnData = TRUE)
 
-TvsN_d_m = 
-  as.data.frame(tumor_vs_normal_113_m) |>
-  select(-group) |> 
-  dist() |> 
-  as.matrix()
-
-cb_g <- combn(tumor_vs_normal_113_m$group, m = 2)
-cb_i = combn(1:length(tumor_vs_normal_113_m$group), m = 2)
-
-
-corr_same_grp <- apply(cb_g, 2, function(x) x[1] == x[2]) %>%  # same groups
-  { cb_i[, ., drop= F] } %>%           # get indices
-  apply(2, function(x) TvsN_d_m[x[2], x[1]])
-
-corr_diff_grp <- apply(cb_g, 2, function(x) x[1] != x[2]) %>%  # different groups 
-  { cb_i[, ., drop= F] } %>%           # get indices
-  apply(2, function(x) TvsN_d_m[x[2], x[1]])
-
-corr_diff_grp_d = as.dist(corr_diff_grp) 
-d_tumor_vs_non_tumor_0 <- append(d_tumor_vs_non_tumor,
-                                 list(tumor_vs_normal_1 = corr_diff_grp_d))
-
-
-
-##  distance as a matrix
-d_m <- df %>% 
-  select(-group) %>% 
-  dist() %>% 
-  as.matrix()
-
-##  combination of groups
-cb_g <- combn(df$group, m = 2)
-##  combination of indices
-cb_i <- combn(1:length(df$group), m= 2) 
+ggplot(geneCounts, aes(x = sample_type, y = count, color = pam50)) +
+  scale_y_log10() +  geom_beeswarm(cex = 0.3)
 ```
 
-
-### Test section
-
-Here we test codes
-
-```{r}
-set.seed(1234)
-a <- matrix(rnorm(250),nrow=25,ncol=10)
-fac <- as.factor(c(rep("A",8),rep("B",10),rep("C",7)))
-
-a_grp <- split.data.frame(a, fac)    ## split matrix by group
-d_grp <- lapply(a_grp, dist)         ## apply `dist` by group
-n_grp <- lengths(d_grp)              ## number of pairs by group
-d <- unlist(d_grp)                   ## combine
-g <- rep(factor(levels(fac), levels = levels(fac)), n_grp)  ## combine
-boxplot(d ~ g)  
-
-```
-
-ggplot
-
-```{r}
-# Sample numeric vector
-numeric_vector <- c(1, 2, 3, 4, 5, 6)
-
-# Convert the numeric vector into a matrix (example assumes it's symmetric and square)
-matrix_size <- sqrt(length(numeric_vector))
-matrix_data <- matrix(numeric_vector, nrow = matrix_size, ncol = matrix_size)
-
-# Convert the matrix to a dist object
-dist_object <- as.dist(matrix_data)
-
-# Include the dist object in a list
-dist_list <- list(dist_object)
-
-# Print the list
-print(dist_list)
-
-corr_diff_grp_d = as.dist(corr_diff_grp) 
-d_tumor_vs_non_tumor_0 <- append(d_tumor_vs_non_tumor,
-                                 list(tumor_vs_normal_1 = corr_diff_grp_d))
-
-```
 
