@@ -6,7 +6,7 @@ editor: visual
 
 ## Load libraries
 
-```{r}
+```{r echo=FALSE}
 library(DESeq2)
 library(org.Hs.eg.db)
 library(tibble)
@@ -21,21 +21,138 @@ library(clusterProfiler)
 library(fgsea)
 ```
 
-## Create a named vector
-
-When you click the **Render** button a document will be generated that includes both content and the output of embedded code. You can embed code like this:
+## are there duplicated genes?
 
 ```{r echo=FALSE}
-ranks <- results_dds_metab$stat
-names(ranks) <- results_dds_metab$symbol
+res <- as.data.frame(results_dds_metab) |>
+  dplyr::select(symbol, stat) |>
+  na.omit() |>  
+  distinct() |>  
+  group_by(symbol) |>  
+  summarize(stat = mean(stat))
+```
+
+## Ranked by stat
+
+```{r}
+ranks <- deframe(res)
+head(ranks, 20)
 ```
 
 ## Load the pathway (gene set) into a named list
 
 ```{r echo=FALSE}
-pathways.kegg = gmtPathways("mysigdb/c2.cp.kegg_medicus.v2023.2.Hs.symbols.gmt")
+pathways.kegg = gmtPathways("mysigdb/c2.cp.kegg_legacy.v2023.2.Hs.symbols.gmt")
 pathways.gobp = gmtPathways("mysigdb/c5.go.bp.v2023.2.Hs.symbols.gmt")
 pathways.reactome = gmtPathways("mysigdb/c2.cp.reactome.v2023.2.Hs.symbols.gmt")
 ```
 
-The `echo: false` option disables the printing of code (only output is displayed).
+```{r}
+pathways.reactome %>% 
+  head() %>% 
+  lapply(head)
+```
+
+## Run fgsea
+
+```{r}
+fgseaRes.reactome <- fgseaMultilevel(pathways = pathways.reactome, 
+                                     stats = ranks,
+                                     nproc = 1,
+                                     minSize = 5,
+                                     maxSize = 500)
+
+fgseaRes.kegg <- fgseaMultilevel(pathways = pathways.kegg, 
+                                     stats = ranks,
+                                     nproc = 1,
+                                     minSize = 5,
+                                     maxSize = 500)
+
+fgseaRes.gobp <- fgseaMultilevel(pathways = pathways.gobp, 
+                                     stats = ranks,
+                                     nproc = 1,
+                                     minSize = 5,
+                                     maxSize = 500)
+```
+
+## Reorder by normalized enrichment score
+
+```{r}
+fgseaResTidy.reactome = 
+  fgseaRes.reactome |>
+  as_tibble() |> 
+  arrange(desc(NES))
+
+fgseaResTidy.kegg = 
+  fgseaRes.kegg |>
+  as_tibble() |> 
+  arrange(desc(NES))
+
+fgseaResTidy.gobp = 
+  fgseaRes.gobp |>
+  as_tibble() |> 
+  arrange(desc(NES))
+```
+
+## Genes by pathways
+
+```{r}
+gene.in.pathway.gobp <- 
+  pathways.gobp |>  
+  enframe("pathway", "symbol") |>  
+  unnest(cols = c(symbol)) |>  
+  inner_join(res, by = "symbol")
+
+gene.in.pathway.gobp
+```
+
+## Vizualizing
+
+```{r}
+fgseaResTidy.gobp$adjPvalue = 
+  ifelse(fgseaResTidy.gobp$padj <= 0.05, "significant", "non-significant")
+
+cols <- c("non-significant" = "grey", "significant" = "red")
+
+ggplot(fgseaResTidy.gobp, aes(reorder(pathway, NES), NES, fill = adjPvalue)) +
+  geom_col() +
+  scale_fill_manual(values = cols) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  coord_flip() +
+  labs(x = "Pathway", y = "Normalized Enrichment Score",
+  title = "Hallmark pathways Enrichment Score from GSEA")
+
+fgseaResTidy.kegg$adjPvalue = 
+  ifelse(fgseaResTidy.kegg$padj <= 0.05, "significant", "non-significant")
+
+cols <- c("non-significant" = "grey", "significant" = "red")
+
+ggplot(fgseaResTidy.kegg, aes(reorder(pathway, NES), NES, fill = adjPvalue)) +
+  geom_col() +
+  scale_fill_manual(values = cols) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  coord_flip() +
+  labs(x = "Pathway", y = "Normalized Enrichment Score",
+  title = "Hallmark pathways Enrichment Score from GSEA")
+
+fgseaResTidy.reactome$adjPvalue = 
+  ifelse(fgseaResTidy.reactome$padj <= 0.05, "significant", "non-significant")
+
+cols <- c("non-significant" = "grey", "significant" = "red")
+
+ggplot(fgseaResTidy.reactome, aes(reorder(pathway, NES), NES, fill = adjPvalue)) +
+  geom_col() +
+  scale_fill_manual(values = cols) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  coord_flip() +
+  labs(x = "Pathway", y = "Normalized Enrichment Score",
+  title = "Hallmark pathways Enrichment Score from GSEA")
+```
+
+```{r}
+plotGseaTable(pathways.gobp[fgseaRes.gobp$pathway[fgseaRes.gobp$padj < 0.01]], 
+              ranks, 
+              fgseaRes.gobp,
+              gseaParam=0.5)
+
+```
