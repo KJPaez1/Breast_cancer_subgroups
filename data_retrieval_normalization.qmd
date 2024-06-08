@@ -33,6 +33,9 @@ library(rfextras)
 library(finalfit)
 library(flextable)
 library(janitor)
+
+library(AnnotationDbi)
+library(org.Hs.eg.db)
 ```
 
 #### Theme for tables with gtsummary
@@ -900,7 +903,9 @@ d_0 = unlist(d_tumor_vs_non_tumor_0)
 g_mine_0 <- rep(factor(levels(sample_type_0), 
                 levels = levels(sample_type_0)), n_t_vs_nont_0) # combine
 ```
+
 ## Plot results
+
 ```{r}
 boxplot(d_0~g_mine_0,
         outline = F,
@@ -920,7 +925,9 @@ boxplot(d_0~g_mine_0,
 ```
 
 ## Diferential expression analysis
-- Main reference: https://bioconductor.org/packages/release/workflows/vignettes/rnaseqGene/inst/doc/rnaseqGene.html
+
+-   Main reference: https://bioconductor.org/packages/release/workflows/vignettes/rnaseqGene/inst/doc/rnaseqGene.html
+
 ```{r}
 dds_tcga_metab_genes = DESeq(dds_tcga_metab_genes)
 
@@ -929,17 +936,21 @@ results_dds_metab = results(dds_tcga_metab_genes,
 
 summary(results_dds_metab)
 ```
+
 ```{r}
 sum(results_dds_metab$padj < 0.05, na.rm=TRUE) # [1] 1322
 ```
+
 ```{r}
 resSig <- subset(results_dds_metab, padj < 0.1)
 head(resSig[ order(resSig$log2FoldChange, decreasing = TRUE), ])
 ```
+
 ```{r}
 topGene <- rownames(resSig)[which.min(resSig$padj)]
 plotCounts(dds_tcga_metab_genes, gene = topGene, intgroup=c("sample_type"))
 ```
+
 ```{r}
 library("ggbeeswarm")
 geneCounts <- plotCounts(dds_tcga_metab_genes, gene = topGene, intgroup = c("sample_type","pam50"),
@@ -949,4 +960,35 @@ ggplot(geneCounts, aes(x = sample_type, y = count, color = pam50)) +
   scale_y_log10() +  geom_beeswarm(cex = 0.3)
 ```
 
+```{r}
+results_dds_metab$row <- rownames(results_dds_metab)
+```
 
+## Annotating and exporting results
+
+```{r}
+columns(org.Hs.eg.db)
+```
+
+```{r}
+ens.str <- substr(rownames(results_dds_metab), 1, 15)
+results_dds_metab$symbol <- mapIds(org.Hs.eg.db,
+                     keys=ens.str,
+                     column="SYMBOL",
+                     keytype="ENSEMBL",
+                     multiVals="first")
+results_dds_metab$entrez <- mapIds(org.Hs.eg.db,
+                     keys=ens.str,
+                     column="ENTREZID",
+                     keytype="ENSEMBL",
+                     multiVals="first")
+
+results_dds_metab$entrez <- mapIds(org.Hs.eg.db,
+                     keys=ens.str,
+                     column="ENTREZID",
+                     keytype="ENSEMBL",
+                     multiVals="first")
+
+resOrdered <- results_dds_metab[order(results_dds_metab$pvalue),]
+head(resOrdered)
+```
