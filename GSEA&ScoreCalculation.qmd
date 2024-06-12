@@ -21,7 +21,7 @@ library(clusterProfiler)
 library(fgsea)
 ```
 
-## are there duplicated genes?
+## Are there duplicated genes?
 
 ```{r echo=FALSE}
 res <- as.data.frame(results_dds_metab) |>
@@ -36,7 +36,7 @@ res <- as.data.frame(results_dds_metab) |>
 
 ```{r}
 ranks <- deframe(res)
-head(ranks, 20)
+head(ranks, 20)   
 ```
 
 ## Load the pathway (gene set) into a named list
@@ -150,9 +150,8 @@ ggplot(fgseaResTidy.reactome, aes(reorder(pathway, NES), NES, fill = adjPvalue))
 ```
 
 ```{r}
-plotGseaTable(pathways.gobp[fgseaRes.gobp$pathway[fgseaRes.gobp$padj < 0.01]], 
+plotGseaTable(pathways.gobp[fgseaRes.gobp$pathway[fgseaRes.gobp$padj < 0.05]], 
               ranks, 
               fgseaRes.gobp,
               gseaParam=0.5)
-
 ```
